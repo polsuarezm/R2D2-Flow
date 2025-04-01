@@ -2,7 +2,7 @@
 
 This project runs a Deep Reinforcement Learning (DRL) inference + training loop on the KV260 board using a TFLite model. It communicates with a National Instruments CRIO over UDP, sending binary actions and receiving observations.
 
-## 🚀 Features
+## Features
 - TFLite inference loop
 - Experience collection and episode-based training
 - Customizable model architecture
@@ -14,7 +14,7 @@ This project runs a Deep Reinforcement Learning (DRL) inference + training loop 
 
 ---
 
-## 📄 File: `config.json`
+## File: `config.json`
 ```json
 {
   "training": true,
@@ -34,12 +34,12 @@ This project runs a Deep Reinforcement Learning (DRL) inference + training loop 
 
 ---
 
-## 🛠️ Performance Tuning / Debug Notes
+## Performance Tuning / Debug Notes
 
 ### 1. CPU Overload on KV260?
 If you're seeing latency between KV260 and CRIO, it's likely due to CPU overload.
 
-### ✅ Solutions:
+### Solutions:
 - **Add delay between loop steps**:
   ```python
   time.sleep(0.001)  # sleep 1 ms
