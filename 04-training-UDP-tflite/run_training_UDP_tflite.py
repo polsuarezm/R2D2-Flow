@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from tensorflow.summary import create_file_writer
 
 # === LOAD PARAMETERS FROM JSON ===
-with open("config.json", "r") as f:
+with open("input_parameters.json", "r") as f:
     PARAMS = json.load(f)
 
 PARAMS["log_dir"] = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M%S"))
