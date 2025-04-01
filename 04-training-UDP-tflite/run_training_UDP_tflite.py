@@ -4,40 +4,66 @@ import numpy as np
 import tensorflow as tf
 import struct
 import os
+import json
 from collections import deque
 from datetime import datetime
 import matplotlib.pyplot as plt
 from tensorflow.summary import create_file_writer
 
-# === CONFIG ===
-TRAINING = True
-N_ACT = 64
-NUM_STEPS = 100000000000
-EPISODE_LENGTH = 100  # You can tune this as needed
-MODEL_PATH = "ppo_policy_dummy.tflite"
-LOG_DIR = "logs/ppo_run_{}".format(datetime.now().strftime("%Y%m%d-%H%M%S"))
-os.makedirs(LOG_DIR, exist_ok=True)
-tensorboard_writer = create_file_writer(LOG_DIR)
+# === LOAD PARAMETERS FROM JSON ===
+with open("config.json", "r") as f:
+    PARAMS = json.load(f)
 
-# === UDP Setup ===
-CRIO_IP = "172.22.10.2"
-KV260_IP = "172.22.10.3"
-UDP_PORT_SEND = 61557
-UDP_PORT_RECV = 61555
+PARAMS["log_dir"] = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M%S"))
+os.makedirs(PARAMS["log_dir"], exist_ok=True)
+tensorboard_writer = create_file_writer(PARAMS["log_dir"])
+DEBUG = PARAMS.get("DEBUG", False)
 
+def debug_log(msg):
+    if DEBUG:
+        with open(os.path.join(PARAMS["log_dir"], "debug_log.txt"), "a") as f:
+            f.write(msg + "\n")
+
+# === UDP Setup (specific for Carlos CRIO+KV260 in UPV) ===
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock_recv.bind((KV260_IP, UDP_PORT_RECV))
+sock_recv.bind((PARAMS["kv260_ip"], PARAMS["udp_port_recv"]))
 
-print(f"Listening on {KV260_IP}:{UDP_PORT_RECV}...")
+print(f"Listening on {PARAMS['kv260_ip']}:{PARAMS['udp_port_recv']}...")
 
-# === Model Setup ===
-def load_model():
-    interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-    interpreter.allocate_tensors()
-    return interpreter
+def create_model():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Input(shape=(1,)),
+        tf.keras.layers.Dense(PARAMS["hidden_units"], activation='relu'),
+        tf.keras.layers.Dense(PARAMS["hidden_units"], activation='relu'),
+        tf.keras.layers.Dense(PARAMS["n_actions"], activation='sigmoid')
+    ])
+    return model
 
-interpreter = load_model()
+def save_weights_and_biases(model, step):
+    weights = model.get_weights()
+    for i, w in enumerate(weights):
+        np.save(os.path.join(PARAMS["log_dir"], f"weights_step{step}_layer{i}.npy"), w)
+
+def convert_to_tflite(model):
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    tflite_model = converter.convert()
+    with open(PARAMS["model_path"], 'wb') as f:
+        f.write(tflite_model)
+
+def load_or_create_model():
+    if os.path.exists(PARAMS["model_path"]):
+        interpreter = tf.lite.Interpreter(model_path=PARAMS["model_path"])
+        interpreter.allocate_tensors()
+        return interpreter, None
+    else:
+        model = create_model()
+        convert_to_tflite(model)
+        interpreter = tf.lite.Interpreter(model_path=PARAMS["model_path"])
+        interpreter.allocate_tensors()
+        return interpreter, model
+
+interpreter, keras_model = load_or_create_model()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 input_shape = input_details[0]['shape']
@@ -46,70 +72,78 @@ input_dtype = input_details[0]['dtype']
 print("TFLite input shape:", input_shape)
 
 # === Experience Buffer ===
-episode_memory = []  # list of (obs, action)
+episode_memory = []
 episode_counter = 0
 losses = []
 
-def update_model(memory):
-    # Placeholder for PPO or other RL algorithm
-    # Here you'd convert the memory into training batches
-    # and update the model weights
-    dummy_loss = np.random.rand()  # Replace with actual loss
-    losses.append(dummy_loss)
-    print(f"[TRAIN] Updated model with {len(memory)} steps. Dummy loss: {dummy_loss:.4f}")
-    return dummy_loss
+def update_model(memory, model):
+    start = time.time()
+    obs_batch = np.array([m[0][0] for m in memory])
+    act_batch = np.array([m[1] for m in memory])
+    model.compile(optimizer='adam', loss='binary_crossentropy')
+    history = model.fit(obs_batch, act_batch, epochs=5, verbose=0)
+    loss = history.history['loss'][-1]
+    convert_to_tflite(model)
+    losses.append(loss)
+    duration = (time.time() - start) * 1000
+    debug_log(f"[TIMING] Model update duration: {duration:.2f} ms")
+    print(f"[TRAIN] Updated model with {len(memory)} steps. Loss: {loss:.4f}")
+    return loss
 
 def save_plot():
     plt.plot(losses)
     plt.title("Training Loss")
     plt.xlabel("Episode")
     plt.ylabel("Loss")
-    plt.savefig(os.path.join(LOG_DIR, "loss_curve.png"))
+    plt.savefig(os.path.join(PARAMS["log_dir"], "loss_curve.png"), dpi=500)
 
 # === Main Loop ===
-for step in range(NUM_STEPS):
-    data_rcv, _ = sock_recv.recvfrom(32)
-    data_rcv_clean = data_rcv.decode()
+while episode_counter < PARAMS["total_episodes"]:
+    for step in range(PARAMS["episode_length"]):
+        t_start = time.time()
 
-    try:
-        timestamp = int(data_rcv_clean.split(";")[0])
-        obs_val = np.float32(data_rcv_clean.split(";")[1])
-        obs_array = np.array([[obs_val]], dtype=np.float32)
-    except:
-        print(f"[Step {step}] Bad data format: {data_rcv_clean}")
-        continue
+        data_rcv, _ = sock_recv.recvfrom(32)
+        data_rcv_clean = data_rcv.decode()
 
-    # === Inference ===
-    interpreter.set_tensor(input_details[0]['index'], obs_array)
-    interpreter.invoke()
-    action = interpreter.get_tensor(output_details[0]['index']).flatten()
-    action_binary = (action >= 0.5).astype(np.uint8)
+        try:
+            timestamp = int(data_rcv_clean.split(";")[0])
+            obs_val = np.float32(data_rcv_clean.split(";")[1])
+            obs_array = np.array([[obs_val]], dtype=np.float32)
+        except:
+            print(f"[Step {step}] Bad data format: {data_rcv_clean}")
+            continue
 
-    # === Action ===
-    message = f"{format(int(action_str,2), '016x')};{timestamp}"
-    #message = f"{format(action_binary, '016x')};{timestamp}"
-    sock_send.sendto(message.encode(), (CRIO_IP, UDP_PORT_SEND))
+        t_infer_start = time.time()
+        interpreter.set_tensor(input_details[0]['index'], obs_array)
+        interpreter.invoke()
+        action = interpreter.get_tensor(output_details[0]['index']).flatten()
+        t_infer_end = time.time()
 
-    # === Store for training ===
-    if TRAINING:
-        episode_memory.append((obs_array.copy(), action_binary.copy()))
+        action_binary = (action >= 0.5).astype(np.uint8)
+        action_str = ''.join(str(b) for b in action_binary)
+        message = f"{format(int(action_str,2), '016x')};{timestamp}"
+        sock_send.sendto(message.encode(), (PARAMS["crio_ip"], PARAMS["udp_port_send"]))
 
-        if len(episode_memory) >= EPISODE_LENGTH:
-            episode_counter += 1
-            loss = update_model(episode_memory)
-            episode_memory = []
+        if PARAMS["training"] and keras_model:
+            episode_memory.append((obs_array.copy(), action_binary.copy()))
 
-            # === Log to TensorBoard ===
-            with tensorboard_writer.as_default():
-                tf.summary.scalar("loss", loss, step=episode_counter)
-            print(f"[TRAIN] Episode {episode_counter} completed.")
+        t_end = time.time()
+        if DEBUG:
+            debug_log(f"[TIMING] Step {step}: total={((t_end - t_start) * 1000):.2f} ms, inference={((t_infer_end - t_infer_start) * 1000):.2f} ms")
 
-            # Optional: save updated model weights here (re-export tflite)
+    if PARAMS["training"] and keras_model:
+        episode_counter += 1
+        loss = update_model(episode_memory, keras_model)
+        save_weights_and_biases(keras_model, episode_counter)
+        episode_memory = []
 
-    # === Optional sleep for pacing ===
-    # time.sleep(0.01)
+        with tensorboard_writer.as_default():
+            tf.summary.scalar("loss", loss, step=episode_counter)
+        print(f"[TRAIN] Episode {episode_counter} completed.")
 
 # === Cleanup ===
 sock_send.close()
 sock_recv.close()
 save_plot()
+tensorboard_writer.close()
+print("POOOL >> Training completed. Model saved and plot generated.")
