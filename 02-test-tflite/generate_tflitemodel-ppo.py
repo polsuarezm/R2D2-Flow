@@ -3,8 +3,8 @@ import tensorflow as tf
 # Define a PPO-style dummy model
 model = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(1,), name="observation"),
-        tf.keras.layers.Dense(512, activation='relu'),
-        tf.keras.layers.Dense(512, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(64, activation='softmax', name="action_probs")
                     ])
 

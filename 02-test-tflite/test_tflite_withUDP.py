@@ -104,8 +104,8 @@ for step in range(NUM_STEPS):
         #start = time.perf_counter_ns()
         #sock_send.sendto(action_binary.tobytes(), (CRIO_IP, UDP_PORT_SEND))
         action_str = ''.join(str(b) for b in action_binary)
-        #message = f"{format(int(action_str,2), '016x')};{timestamp}"
-        message = f"{format(step*1000000, '016x')};{timestamp}"
+        message = f"{format(int(action_str,2), '016x')};{timestamp}"
+        #message = f"{format(step*1000000, '016x')};{timestamp}"
         print(f"mess > {message}")
         #message = f"{format(step, '016x')};{timestamp}"
         sock_send.sendto(message.encode(), (CRIO_IP, UDP_PORT_SEND))
