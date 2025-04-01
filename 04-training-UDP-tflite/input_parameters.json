@@ -1,4 +1,5 @@
 {
+    "env_path_toactivate": "/home/polete/Documents/DRL-tflite-KV260-env/bin",
     "training": true,
     "n_actions": 64,
     "episode_length": 20000000,
