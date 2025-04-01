@@ -14,8 +14,8 @@ export TF_NUM_INTEROP_THREADS=1
 # Launch your agent script pinned to CPU core 1
 # Replace "run_agent.py" with your actual script filename
 echo "Launching agent on CPU core 1..."
-taskset -c 1 python3 run_training_UDP_tflite.py
-#taskset -c 1 python3 run_training_UDP_tflite_OPTIMIZED.py
+#taskset -c 1 python3 run_training_UDP_tflite.py
+taskset -c 1 python3 run_training_UDP_tflite_OPTIMIZED.py
 #AGENT_PID=$!
 
 # Monitor the CPU usage of the agent every 0.5s using top
