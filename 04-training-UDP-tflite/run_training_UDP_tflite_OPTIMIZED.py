@@ -96,8 +96,9 @@ while episode_counter < PARAMS["total_episodes"]:
 
         try:
             data_rcv_clean = data_rcv.decode()
-            timestamp_str, obs_val_str = data_rcv_clean.split(";")
+            timestamp_str, obs_val_str, latency = data_rcv_clean.split(";")
             timestamp = int(timestamp_str)
+            #print(f"laten >> {int(latency)}")
             obs_val = np.float32(obs_val_str)
             obs_array = np.array([[obs_val]], dtype=np.float32)
         except Exception as e:
