@@ -1,0 +1,16 @@
+{
+    "env_path_toactivate": "/home/polete/Documents/DRL-tflite-KV260-env/bin",
+    "training": true,
+    "n_actions": 64,
+    "episode_length": 5000,
+    "total_episodes": 5,
+    "hidden_units": 64,
+    "model_path": "ppo_policy_dummy.tflite",
+    "log_dir_template": "logs/ppo_run_{}",
+    "crio_ip": "172.22.10.2",
+    "kv260_ip": "172.22.10.3",
+    "udp_port_send": 61557,
+    "udp_port_recv": 61555,
+    "DEBUG": true
+  }
+  
