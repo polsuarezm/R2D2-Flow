@@ -1,13 +1,13 @@
 {
-  "kv260_ip": "0.0.0.0",
-  "udp_port_recv": 5005,
-  "crio_ip": "192.168.1.2",
-  "udp_port_send": 5006,
+  "kv260_ip": "172.22.10.3",
+  "udp_port_recv": 61555,
+  "crio_ip": "172.22.10.2",
+  "udp_port_send":61557,
 
-  "obs_dim": 2,
-  "hidden1": 3,
-  "hidden2": 4,
-  "n_actions": 5,
+  "obs_dim": 5,
+  "hidden1": 64,
+  "hidden2": 64,
+  "n_actions": 6,
 
   "model_path": "ppo_actor_model.keras",
   "weight_string_output": "weights_encoded_tosendUPD.txt",
@@ -20,5 +20,6 @@
 
   "log_dir_template": "logs/ppo_{0}",
   "DEBUG": true,
-  "training": true
+  "training": true,
+  "clean_prev_model"  : true
 }
