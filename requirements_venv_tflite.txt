@@ -36,7 +36,7 @@ requests==2.32.3
 rich==13.9.4
 setuptools==59.6.0
 six==1.17.0
-spidev==3.6
+#spidev==3.6
 tensorboard==2.19.0
 tensorboard-data-server==0.7.2
 tensorflow==2.19.0
