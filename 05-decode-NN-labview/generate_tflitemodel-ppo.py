@@ -2,10 +2,10 @@ import tensorflow as tf
 
 # Define a PPO-style dummy model
 model = tf.keras.Sequential([
-        tf.keras.layers.Input(shape=(5,), name="observation"),
-        tf.keras.layers.Dense(7, activation='relu'),
-        tf.keras.layers.Dense(7, activation='relu'),
-        tf.keras.layers.Dense(11, activation='softmax', name="action_probs")
+        tf.keras.layers.Input(shape=(2,), name="observation"),
+        tf.keras.layers.Dense(3, activation='relu'),
+        tf.keras.layers.Dense(5, activation='relu'),
+        tf.keras.layers.Dense(7, activation='softmax', name="action_probs")
                     ])
 
 # Convert to TFLite
