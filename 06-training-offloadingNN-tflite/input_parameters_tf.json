@@ -4,9 +4,9 @@
   "crio_ip": "172.22.10.2",
   "udp_port_send":61557,
 
-  "obs_dim": 5,
-  "hidden1": 64,
-  "hidden2": 64,
+  "obs_dim": 3,
+  "hidden1": 4,
+  "hidden2": 5,
   "n_actions": 6,
 
   "model_path": "ppo_actor_model.keras",
