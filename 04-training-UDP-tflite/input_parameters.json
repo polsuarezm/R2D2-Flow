@@ -8,7 +8,7 @@
     "model_path": "ppo_policy_dummy.tflite",
     "log_dir_template": "logs/ppo_run_{}",
     "crio_ip": "172.22.10.2",
-    "kv260_ip": "172.22.10.3",
+    "kv260_ip": "172.22.10.1",
     "udp_port_send": 61557,
     "udp_port_recv": 61555,
     "DEBUG": true
