@@ -52,14 +52,14 @@ def extract_weights_as_string(model):
     arch_string = f"{PARAMS['obs_dim']}_{PARAMS['hidden1']}_{PARAMS['hidden2']}_{PARAMS['n_actions']}"
     identifier = "Control_id_x"
     comment = (
-    "# Format: arch_id;"
-    " W1_11;W1_12;...;W1_1n;W1_21;...;W1_mn;"
-    " b1_1;...;b1_m;"
-    " W2_11;...;W2_pq;"
-    " b2_1;...;b2_p;"
-    " W3_11;...;W3_rs;"
-    " b3_1;...;b3_r;"
-    " identifier\n"
+        "# Format: arch_id;"
+        " W1_11;W1_12;...;W1_1n;W1_21;...;W1_mn;"
+        " b1_1;...;b1_m;"
+        " W2_11;...;W2_pq;"
+        " b2_1;...;b2_p;"
+        " W3_11;...;W3_rs;"
+        " b3_1;...;b3_r;"
+        " identifier\n"
     )
     final_string = arch_string + ";" + ";".join(f"{v:.5E}" for v in flat_values) + ";" + identifier
     total_params = len(flat_values)
@@ -71,7 +71,6 @@ def extract_weights_as_string(model):
     print("Export complete. Parameters:", total_params)
     print("Final string preview:", final_string[:200], "...")
     print("Total string length:", len(final_string))
-
     return final_string
 
 # === PPO Loss Function ===
@@ -87,6 +86,7 @@ if os.path.exists(PARAMS["model_path"]):
     model = tf.keras.models.load_model(PARAMS["model_path"])
 else:
     model = create_model()
+    model.save(PARAMS["model_path"])  # Save initially for Netron or inspection
 
 optimizer = tf.keras.optimizers.Adam(learning_rate=PARAMS.get("learning_rate", 0.001))
 
