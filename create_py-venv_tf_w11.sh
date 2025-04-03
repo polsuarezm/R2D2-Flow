@@ -18,7 +18,7 @@ source DRL-tf-ubuntu/bin/activate
 pip install --upgrade pip
 
 # Install dependencies
-#pip install -r requirements_venv_tf_w11.txt
+pip install -r requirements_venv_tf_w11.txt
 
 # Show what's installed
 pip list
