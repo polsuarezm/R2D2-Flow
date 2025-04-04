@@ -31,6 +31,17 @@ Once inside the project folder, the Python environment should activate automatic
 source pyenv-DRL-tf/bin/activate
 ```
 
+## 3. Synchronising github repo 
+
+To update the folder from the repo to the local:
+```bash
+. pull_git_guardiola.sh
+```
+
+To push the local files modifications to the repo:
+```bash
+. push_git_guardiola.sh
+```
 ---
 
 ## 3. Running Tests
@@ -65,11 +76,8 @@ python3 run_training_offloadUDP_tf_OPTIMIZED.py
 
 ---
 
-## 4. Additional Notes
 
-- The `.bashrc` file in this project includes a custom prompt and logic to automatically activate the virtual environment when entering the project directory.
-- This setup assumes Ubuntu 20.04 or later and Python 3.8+.
-- If additional configuration is required (e.g., for CRIO deployment, logging, or hardware), refer to project documentation or internal deployment guides.
+
 
 
 
