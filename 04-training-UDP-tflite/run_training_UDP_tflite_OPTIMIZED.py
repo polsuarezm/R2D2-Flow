@@ -10,6 +10,8 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from tensorflow.summary import create_file_writer
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 # === LOAD PARAMETERS FROM JSON ===
 with open("input_parameters.json", "r") as f:
     PARAMS = json.load(f)
