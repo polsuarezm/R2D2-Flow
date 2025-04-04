@@ -31,8 +31,26 @@ def debug_log(msg, flush=False):
 # === UDP Setup ===
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock_recv.bind((PARAMS["kv260_ip"], PARAMS["udp_port_recv"]))
-print(f"Listening on {PARAMS['kv260_ip']}:{PARAMS['udp_port_recv']}...")
+
+# Bind only once – to all available interfaces
+sock_recv.bind(("0.0.0.0", PARAMS["udp_port_recv"]))
+sock_recv.settimeout(2)
+
+target_address = (PARAMS["crio_ip"], PARAMS["udp_port_send"])
+
+# === Heartbeat Loop ===
+while True:
+    try:
+        print("Sending heartbeat...")
+        sock_send.sendto(b"ping", target_address)
+
+        data, addr = sock_recv.recvfrom(1024)
+        print(f"Got response from {addr}: {data}")
+        break  # Connection considered successful
+    except socket.timeout:
+        print("No response. Retrying in 2 seconds...")
+        time.sleep(2)
+
 
 # === PPO Actor Model ===
 def create_model():
