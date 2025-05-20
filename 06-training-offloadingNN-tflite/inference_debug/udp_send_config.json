@@ -1,0 +1,6 @@
+{
+  "weights_file": "weights_arch1.txt",
+  "delay_seconds": 1,
+  "repeat_count": 3
+}
+
