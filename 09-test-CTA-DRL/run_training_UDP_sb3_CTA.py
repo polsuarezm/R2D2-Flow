@@ -34,8 +34,8 @@ def debug_log(msg, flush=False):
 # === UDP setup ===
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock_recv.bind((PARAMS["pc_ip"], PARAMS["udp_port_recv"]))
-print(f"Listening on {PARAMS['pc_ip']}:{PARAMS['udp_port_recv']}")
+sock_recv.bind((PARAMS["hp_ip"], PARAMS["udp_port_recv"]))
+print(f"Listening on {PARAMS['hp_ip']}:{PARAMS['udp_port_recv']}")
 
 # === Custom Gym environment ===
 class CRIOUDPEnv(gym.Env):
@@ -50,13 +50,15 @@ class CRIOUDPEnv(gym.Env):
 
     def reset(self):
         self.current_step = 0
-        obs, _ = self._recv_obs_reward()
+        obs, _reward = self._recv_obs_reward()  # only use obs
         return np.array([obs], dtype=np.float32)
 
     def step(self, action):
         action_val = int(np.clip(action[0], 20, 1000))
         hex_str = format(action_val, '016x')
-        message = f"{hex_str};{self.timestamp}"
+        hex_str_aux = 10
+        message = f"{self.timestamp};400"
+        print("SENDING - ", message)
         sock_send.sendto(message.encode(), (PARAMS["crio_ip"], PARAMS["udp_port_send"]))
 
         obs, reward = self._recv_obs_reward()
@@ -65,20 +67,28 @@ class CRIOUDPEnv(gym.Env):
         return np.array([obs], dtype=np.float32), reward, done, {}
 
     def _recv_obs_reward(self):
-        while True:
-            try:
-                data_rcv, _ = sock_recv.recvfrom(32)
-                decoded = data_rcv.decode()
-                parts = decoded.strip().split(";")
-                if len(parts) < 3:
-                    continue
-                self.timestamp = int(parts[0])
-                obs_val = float(parts[1])
-                reward_val = float(parts[2])
-                return obs_val, reward_val
-            except Exception as e:
-                debug_log(f"[UDP ERROR] {e}")
-                continue
+        
+        data_rcv, _ = sock_recv.recvfrom(1024)
+        decoded = data_rcv.decode().strip()
+        parts = decoded.split(";")
+
+        print("Pooool -- ", decoded)
+
+        # Parse fields
+        self.timestamp = int(parts[0])
+        obs1 = float(parts[1])
+        obs2 = float(parts[2])
+        obs3 = float(parts[3])
+        obs4 = float(parts[4])
+
+        # Define your observation (choose one or combine)
+        observation = obs1  # Or np.mean([obs1, obs2, obs3, obs4]) etc.
+
+        # Define a dummy or placeholder reward for now
+        reward = 0.0  # Replace with a proper calculation if needed
+
+        return observation, reward
+
 
     def render(self, mode='human'):
         pass
