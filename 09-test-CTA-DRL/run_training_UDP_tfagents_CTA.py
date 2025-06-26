@@ -30,8 +30,8 @@ def debug_log(msg, flush=False):
 # === UDP Setup ===
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock_recv.bind((PARAMS["pc_ip"], PARAMS["udp_port_recv"]))
-print(f"Listening on {PARAMS['pc_ip']}:{PARAMS['udp_port_recv']}...")
+sock_recv.bind((PARAMS["hp_ip"], PARAMS["udp_port_recv"]))
+print(f"Listening on {PARAMS['hp_ip']}:{PARAMS['udp_port_recv']}...")
 
 # === Custom UDP Environment ===
 class UdpEnvironment(Environment):
