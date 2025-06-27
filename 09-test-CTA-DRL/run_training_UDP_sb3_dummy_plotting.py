@@ -36,13 +36,15 @@ print(f"Listening on {PARAMS['hp_ip']}:{PARAMS['udp_port_recv']}")
 # === Environment ===
 class CRIOUDPEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
+
     def __init__(self):
         super().__init__()
-        self.observation_space = spaces.Box(-np.inf, np.inf, (4,), dtype=np.float32)
+        # Two-element observation: [noise, reward_dependent]
+        self.observation_space = spaces.Box(-np.inf, np.inf, (2,), dtype=np.float32)
         self.action_space = spaces.Box(ACTION_MIN, ACTION_MAX, (1,), dtype=np.float32)
         self.timestamp = 0
         self.step_count = 0
-        self.last_obs = np.zeros(4, dtype=np.float32)
+        self.last_obs = np.zeros(2, dtype=np.float32)
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -53,43 +55,46 @@ class CRIOUDPEnv(gym.Env):
     def step(self, action):
         raw = float(action[0])
         clipped = float(np.clip(raw, ACTION_MIN, ACTION_MAX))
-        output = clipped * 500 + 500
+        # Send action effect
+        output = (clipped + 1) * 1000
         sock_send.sendto(
             f"{self.timestamp};{output:.4f}".encode(),
             (PARAMS["crio_ip"], PARAMS["udp_port_send"])
         )
+
         obs = self._receive_observation()
-        reward = obs[1] - 4
+        reward = obs[1] - 4  # reward depends only on second obs element
         self.step_count += 1
-        terminated = self.step_count >= PARAMS["episode_length"]
+        terminated = (self.step_count >= PARAMS["episode_length"])
         truncated = False
+
         if DEBUG:
-            print(f"Step {self.step_count} | Raw={raw:.4f}, Clipped={clipped:.4f}, Reward={reward:.4f}")
+            print(f"Step {self.step_count} | Raw={raw:.4f}, Clipped={clipped:.4f}, "
+                  f"Obs[1]={obs[1]:.4f}, Reward={reward:.4f}")
+
         return obs, reward, terminated, truncated, {}
 
     def _receive_observation(self):
-        while True:
-            data, _ = sock_recv.recvfrom(1024)
-            parts = data.decode().strip().split(";")
-            if len(parts) != 5:
-                if DEBUG: print(f"Malformed packet: {data!r}")
-                continue
-            self.timestamp = int(parts[0])
-            self.last_obs = np.array([float(x) for x in parts[1:5]], dtype=np.float32)
-            return self.last_obs
+        data, _ = sock_recv.recvfrom(1024)
+        parts = data.decode().strip().split(";")
+        self.timestamp = int(parts[0])
+        self.last_obs = np.array([float(parts[1]), float(parts[2])], dtype=np.float32)
+        if DEBUG:
+            print("Received obs:", self.last_obs, "ts:", self.timestamp)
+        return self.last_obs
 
     def render(self, mode="human"): pass
     def close(self): pass
 
-# === Monitor + DummyVecEnv ===
+# === Wrap environment with Monitor ===
 def make_env():
     env = CRIOUDPEnv()
-    # explicitly name the monitor file so that load_results can find it
-    return Monitor(env, filename=os.path.join(LOG_DIR, "env_monitor.monitor.csv"))
+    # Specifying base name; SB3 will append ".monitor.csv"
+    return Monitor(env, filename=os.path.join(LOG_DIR, "env_monitor"))
 
 env = DummyVecEnv([make_env])
 
-# === PPO setup ===
+# === PPO model setup ===
 model_path = os.path.join(LOG_DIR, "ppo_crio")
 if CREATE_NEW or not os.path.exists(model_path + ".zip"):
     model = PPO(
@@ -99,7 +104,7 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
         tensorboard_log=LOG_DIR,
         policy_kwargs=dict(net_arch=[PARAMS["hidden_units"]] * 2),
     )
-    print(f"PPO configured (n_steps={N_STEPS}, batch_size={BATCH_SIZE}, n_epochs={N_EPOCHS})")
+    print(f"PPO configured: n_steps={N_STEPS}, batch_size={BATCH_SIZE}, n_epochs={N_EPOCHS}")
 else:
     model = PPO.load(model_path, env=env)
     print("Loaded existing model.")
@@ -109,16 +114,19 @@ if not EVAL_MODE:
     model.learn(total_timesteps=int(PARAMS["total_episodes"] * PARAMS["episode_length"]))
     model.save(model_path)
 
-    # Verify monitor file exists
-    files = glob.glob(os.path.join(LOG_DIR, "*monitor.csv"))
-    print("Monitor files:", files)
+    # Confirm monitor file exists
+    monitor_files = glob.glob(os.path.join(LOG_DIR, "*monitor.csv"))
+    print("Monitor files found:", monitor_files)
+    if not monitor_files:
+        raise RuntimeError("No monitor CSV found. "
+                           "Check that total_timesteps >= n_steps to allow PPO updates.")
 
-    # Plot reward vs timesteps
+    # Load monitor output and plot
     results = load_results(LOG_DIR)
     x, y = ts2xy(results, "timesteps")
     plot_results([results], LOG_DIR, "timesteps", "ppo_crio")
     plt.savefig(os.path.join(LOG_DIR, "reward_vs_steps.png"))
-    print("Saved reward_vs_steps.png")
+    print("Saved plot: reward_vs_steps.png")
 
 else:
     for ep in range(PARAMS["total_episodes"]):
@@ -134,5 +142,5 @@ else:
 # === Cleanup ===
 sock_send.close()
 sock_recv.close()
-print("Run completed. Find logs and plots in:", LOG_DIR)
+print("Training complete. Logs and plot saved in:", LOG_DIR)
 

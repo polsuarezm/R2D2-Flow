@@ -2,10 +2,10 @@
   "env_path_toactivate": "/home/polete/Documents/DRL-tflite-KV260-env/bin",
   "training": true,
   "evaluation": false,
-  "episode_length": 1,
+  "episode_length": 20,
   "total_episodes": 100,
   "create_new_model": true,
-  "hidden_units": 3,
+  "hidden_units": 4,
   "log_dir_template": "logs/ppo_run_{}",
   "log_dir_bueno": "logs/ppo_run_bueno",
   "crio_ip": "172.22.11.2",
@@ -13,11 +13,11 @@
   "udp_port_send": 61557,
   "udp_port_recv": 61555,
   "DEBUG": true,
-  "ppo_learning_rate": 0.1,
+  "ppo_learning_rate": 0.01,
   "action_min": -1,
   "action_max": 1,
-  "n_steps": 10,
-  "batch_size": 2,
-  "n_epochs": 1
+  "n_steps": 20,
+  "batch_size": 10,
+  "n_epochs": 5
 }
 
