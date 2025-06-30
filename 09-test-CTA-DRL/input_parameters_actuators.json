@@ -5,7 +5,7 @@
   "message_type": 1,
   "training": true,
   "evaluation": false,
-  "episode_length": 20,
+  "episode_length": 100,
   "total_episodes": 100,
   "create_new_model": true,
   "hidden_units": 4,

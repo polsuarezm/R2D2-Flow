@@ -56,7 +56,8 @@ class CRIOUDPEnv(gym.Env):
         return obs, {}
 
     def step(self, action):
-        raw_action = float(action)
+        print("POOOOL -->", action)
+        raw_action = action
         # Send action effect
         # 2 options: 
         # -- message as simple array of numbers then string "0;1;1;0;1..."
@@ -73,15 +74,15 @@ class CRIOUDPEnv(gym.Env):
         )
 
         obs = self._receive_observation()
-        reward = 1-obs[1]  # reward depends only on second obs element (now just minimizing the fluctuations RMS of the signal)
+        reward = 1-(obs[0]/0.04)  # reward depends only on second obs element (now just minimizing the fluctuations RMS of the signal)
         self.step_count += 1
         terminated = (self.step_count >= PARAMS["episode_length"]) # assuming PARAMS["episode_length"] is defined
         # For now, we don't have a max episode length for external constrains, so we set truncated to False
         truncated = False 
 
         if DEBUG:
-            print(f"Step {self.step_count} | mess={message:.4f}"
-                  f"Obs[1]={obs[1]:.4f}, Reward={reward:.4f}")
+            print(f"Step {self.step_count} | mess={message}"
+                  f"Obs[0]={obs[0]:.4f}, Reward={reward:.4f}")
 
         return obs, reward, terminated, truncated, {}
 
