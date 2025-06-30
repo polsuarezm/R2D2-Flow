@@ -1,0 +1,190 @@
+import socket, json, os, glob
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
+import time
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.results_plotter import load_results, ts2xy, plot_results
+
+# === Load configuration ===
+with open("input_parameters_v1.json", "r") as f:
+    PARAMS = json.load(f)
+
+DEBUG = PARAMS.get("DEBUG", False)
+EVAL_MODE = PARAMS.get("evaluation", False)
+CREATE_NEW = PARAMS.get("create_new_model", True)
+
+LOG_DIR = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M%S"))
+os.makedirs(LOG_DIR, exist_ok=True)
+
+ACTION_MIN = float(PARAMS["action_min"])
+ACTION_MAX = float(PARAMS["action_max"])
+N_STEPS = int(PARAMS["n_steps"])
+BATCH_SIZE = int(PARAMS["batch_size"])
+N_EPOCHS = int(PARAMS["n_epochs"])
+N_OBS_ARRAY = int(PARAMS["size_obs_array"])
+N_ACTUATOR_ARRAY = int(PARAMS["size_actuator_array"])
+MESSAGE_TYPE = int(PARAMS["message_type"])  # 1 for array, 2 for string
+
+# === UDP setup ===
+sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock_recv.setblocking(False)
+sock_recv.bind((PARAMS["hp_ip"], PARAMS["udp_port_recv"]))
+print(f"Listening on {PARAMS['hp_ip']}:{PARAMS['udp_port_recv']}")
+
+# === Environment ===
+class CRIOUDPEnv(gym.Env):
+    metadata = {"render_modes": ["human"]}
+
+    def __init__(self):
+        super().__init__()
+        # for now: 1st MEAN, 2nd VARIANCE, 3rd ?fft peak? (the idea is add even more deending on the noise or valuaable data adquisition)
+        self.observation_space = spaces.Box(-np.inf, np.inf, (N_OBS_ARRAY,), dtype=np.float32)
+        self.action_space = spaces.Box(ACTION_MIN, ACTION_MAX, (N_ACTUATOR_ARRAY,), dtype=np.float32)
+        self.timestamp = 0
+        self.step_count = 0
+        self.last_obs = np.zeros(N_OBS_ARRAY, dtype=np.float32)
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        self.step_count = 0
+        obs = self._receive_observation()
+        return obs, {}
+
+    def step(self, action):
+        start_time = time.perf_counter()
+
+        #print("POOOOL -->", action)
+        raw_action = (action+1)/2
+        # Send action effect
+        # 2 options: 
+        # -- message as simple array of numbers then string "0;1;1;0;1..."
+        # -- message with all put as a string "010001110.."
+        #output = np.where(raw_action >= 0, 1, 0)
+        if MESSAGE_TYPE==1:
+            message = f"{self.timestamp};1;1;1;1;1;1;" + ';'.join(map(str, raw_action))
+        else:
+            message = f"{self.timestamp};{''.join(map(str, raw_action))}"
+
+
+        sock_recv.setblocking(False)
+        while True:
+            try:
+                data, _ = sock_recv.recvfrom(1024)
+            except BlockingIOError:
+                break
+
+        sock_send.sendto(
+            message.encode(),
+            (PARAMS["crio_ip"], PARAMS["udp_port_send"])
+        )
+
+        #start_time = time.perf_counter()
+
+        obs = self._receive_observation()
+
+        #print(time.perf_counter()-start_time)
+        
+        #print("POOOL obs --> ", obs)
+        reward = (200-obs[2])/200  # reward depends only on second obs element (now just minimizing the fluctuations RMS of the signal)
+        self.step_count += 1
+        terminated = (self.step_count >= PARAMS["episode_length"]) # assuming PARAMS["episode_length"] is defined
+        # For now, we don't have a max episode length for external constrains, so we set truncated to False
+        truncated = False 
+
+        if DEBUG:
+            print(f"Step {self.step_count} | mess={message}"
+                  f"Obs[0]={obs[0]:.4f}, Reward={reward:.4f}")
+
+        return obs, reward, terminated, truncated, {}
+
+    def _receive_observation(self):
+
+        sock_recv.setblocking(True)
+        data, _ = sock_recv.recvfrom(1024)  # Receive up to 1024 bytes from socket
+        sock_recv.setblocking(False)
+
+        parts = data.decode().strip().split(";")  # Decode bytes to string, strip whitespace, split by ";"
+        
+        #print("parts: ", parts)
+
+        self.timestamp = int(parts[0])  # First part is the timestamp (assumed to be an integer)
+        
+        # Second part is the observation, as a float in a 1-element array
+        #self.last_obs = np.array([float(parts[1:5])], dtype=np.float32)
+        #self.last_obs = np.array(parts[1:5])
+        self.last_obs = np.array([float(x) for x in parts[1:5]], dtype=np.float32)
+
+        
+        if DEBUG:
+            print("Received obs:", self.last_obs, "ts:", self.timestamp)
+
+        return self.last_obs  # Return the observation
+
+
+    def render(self, mode="human"): pass
+    def close(self): pass
+
+# === Wrap environment with Monitor ===
+def make_env():
+    env = CRIOUDPEnv()
+    # Specifying base name; SB3 will append ".monitor.csv"
+    return Monitor(env, filename=os.path.join(LOG_DIR, "env_monitor"))
+
+env = DummyVecEnv([make_env])
+
+# === PPO model setup ===
+model_path = os.path.join(LOG_DIR, "ppo_crio")
+if CREATE_NEW or not os.path.exists(model_path + ".zip"):
+    model = PPO(
+        "MlpPolicy", env, verbose=1,
+        learning_rate=PARAMS.get("ppo_learning_rate", 1e-3),
+        n_steps=N_STEPS, batch_size=BATCH_SIZE, n_epochs=N_EPOCHS,
+        tensorboard_log=LOG_DIR,
+        policy_kwargs=dict(net_arch=[PARAMS["hidden_units"]] * 2),
+    )
+    print(f"PPO configured: n_steps={N_STEPS}, batch_size={BATCH_SIZE}, n_epochs={N_EPOCHS}")
+else:
+    model = PPO.load(model_path, env=env)
+    print("Loaded existing model.")
+
+# === Training or evaluation ===
+if not EVAL_MODE:
+    model.learn(total_timesteps=int(PARAMS["total_episodes"] * PARAMS["episode_length"]))
+    model.save(model_path)
+
+    # Confirm monitor file exists
+    monitor_files = glob.glob(os.path.join(LOG_DIR, "*monitor.csv"))
+    print("Monitor files found:", monitor_files)
+    if not monitor_files:
+        raise RuntimeError("No monitor CSV found. "
+                           "Check that total_timesteps >= n_steps to allow PPO updates.")
+
+    # Load monitor output and plot
+    results = load_results(LOG_DIR)
+    x, y = ts2xy(results, "timesteps")
+    plot_results([results], LOG_DIR, "timesteps", "ppo_crio")
+    plt.savefig(os.path.join(LOG_DIR, "reward_vs_steps.png"))
+    print("Saved plot: reward_vs_steps.png")
+
+else:
+    for ep in range(PARAMS["total_episodes"]):
+        obs = env.reset()
+        total = 0.0
+        done = False
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, truncated  = env.step(action)
+            total += reward
+        print(f"Eval Episode {ep+1}: Total Reward = {total:.2f}")
+
+# === Cleanup ===
+sock_send.close()
+sock_recv.close()
+print("Training complete. Logs and plot saved in:", LOG_DIR)
+
