@@ -1,7 +1,7 @@
 {
   "env_path_toactivate": "/home/polete/Documents/DRL-tflite-KV260-env/bin",
   "size_actuator_array": 6,
-  "size_obs_array": 2, // for now: 1st MEAN, 2nd VARIANCE, 3rd ?fft peak?
+  "size_obs_array": 2, 
   "message_type": 1,
   "training": true,
   "evaluation": false,
