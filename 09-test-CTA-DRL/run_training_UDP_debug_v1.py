@@ -101,7 +101,7 @@ class CRIOUDPEnv(gym.Env):
             data, _ = sock_recv.recvfrom(1024)
             parts = data.decode().strip().split(";")
             aux_obs = np.array([float(x) for x in parts[1:6]], dtype=np.float32)
-            print(f"descarte: rew = {(SCALAR_REW - aux_obs[2]) / SCALAR_REW}; action = {aux_obs[4]})")
+            print(f"descarte: rew = {(SCALAR_REW - aux_obs[2]) / SCALAR_REW}; action = {aux_obs[4]}) / ts = {int(parts[0])}")
         sock_recv.setblocking(False)
 
         self.timestamp = int(parts[0])
@@ -140,7 +140,7 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
         n_actions = env.action_space.shape[0]
         action_noise = OrnsteinUhlenbeckActionNoise(
             mean=np.zeros(n_actions),
-            sigma=PARAMS.get("ou_sigma", 0.1) * np.ones(n_actions)
+            sigma=PARAMS.get("ou_sigma", 0.1)*np.ones(n_actions)
         )
 
         model = DDPG(
@@ -148,12 +148,12 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
             env,
             verbose=1,
             learning_rate=PARAMS.get("ddpg_learning_rate", 1e-3),
-            buffer_size=PARAMS.get("buffer_size", 50),
-            batch_size=PARAMS.get("batch_size", 10),
-            tau=PARAMS.get("tau", 0.005),
+            buffer_size=PARAMS.get("buffer_size", 1000),
+            batch_size=PARAMS.get("batch_size", 120),
+            tau=PARAMS.get("tau", 0.001),
             gamma=PARAMS.get("gamma", 0.99),
             learning_starts=PARAMS.get("learning_starts", 1),
-            train_freq=PARAMS.get("train_freq", (1, "step")),
+            train_freq=PARAMS.get("train_freq", (10, "step")),
             gradient_steps=PARAMS.get("gradient_steps", 1),
             action_noise=action_noise,
             tensorboard_log=LOG_DIR,

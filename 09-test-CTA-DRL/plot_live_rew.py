@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
+import pandas as pd
 import time
 import os
-import pandas as pd
 
-LOG_DIR = "logs/20250701-XXXXXX"  # <-- actualiza esto con el nombre del folder actual
-CSV_FILE = os.path.join(LOG_DIR, "live_rewards.csv")
+CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs/ppo_v1_ACTUATORS_LENTO_20250701-181328"  # <- update to your real path
 
 plt.ion()
 fig, ax = plt.subplots()
@@ -15,22 +14,25 @@ ax.set_title("Live Reward Plot")
 ax.grid(True)
 ax.legend()
 
-xdata, ydata = [], []
-
-def read_data():
-    if os.path.exists(CSV_FILE):
-        df = pd.read_csv(CSV_FILE, header=None, names=["step", "reward", "timestamp"])
-        return df["step"], df["reward"]
-    return [], []
+def read_csv_safely(path):
+    try:
+        df = pd.read_csv(path, header=None, names=["step", "reward", "timestamp"])
+        return df
+    except Exception:
+        return None
 
 while True:
     try:
-        xdata, ydata = read_data()
-        line.set_data(xdata, ydata)
-        ax.relim()
-        ax.autoscale_view()
-        plt.draw()
-        plt.pause(0.5)  # refresh rate
+        df = read_csv_safely(CSV_FILE)
+        if df is not None and not df.empty:
+            line.set_xdata(df["step"])
+            line.set_ydata(df["reward"])
+            ax.relim()
+            ax.autoscale_view()
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+        time.sleep(0.5)
     except KeyboardInterrupt:
+        print("Stopped.")
         break
 
