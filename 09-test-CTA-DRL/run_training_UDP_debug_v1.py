@@ -60,7 +60,7 @@ class CRIOUDPEnv(gym.Env):
         return obs, {}
 
     def step(self, action):
-        raw_action = (action + 1) / 2
+        raw_action = action
 
         if MESSAGE_TYPE == 1:
             message = f"{self.timestamp};1;1;1;1;1;1;" + ';'.join(map(str, raw_action))
@@ -150,7 +150,7 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
             learning_rate=PARAMS.get("ddpg_learning_rate", 1e-3),
             buffer_size=PARAMS.get("buffer_size", 1000),
             batch_size=PARAMS.get("batch_size", 120),
-            tau=PARAMS.get("tau", 0.001),
+            tau=PARAMS.get("tau", 0.05),
             gamma=PARAMS.get("gamma", 0.99),
             learning_starts=PARAMS.get("learning_starts", 1),
             train_freq=PARAMS.get("train_freq", (10, "step")),

@@ -17,8 +17,8 @@
   "udp_port_send": 61557,
   "udp_port_recv": 61555,
   "DEBUG": true,
-  "action_min": -1,
-  "action_max": 1,
+  "action_min": 0.3,
+  "action_max": 0.7,
   "n_steps": 50,
   "batch_size": 100,
   "n_epochs": 5,
@@ -27,5 +27,6 @@
   "ppo_learning_rate": 0.03,
   "ddpg_learning_rate": 0.05,
   "buffer_size": 500000,
+  "tau": 0.05,
   "ou_sigma": 0.1
 }
