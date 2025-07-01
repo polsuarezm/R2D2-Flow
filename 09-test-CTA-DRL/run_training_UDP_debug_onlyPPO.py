@@ -5,9 +5,7 @@ from datetime import datetime
 import time
 import gymnasium as gym
 from gymnasium import spaces
-
-from stable_baselines3 import PPO, DDPG
-from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
+from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.results_plotter import load_results, ts2xy, plot_results
@@ -19,7 +17,6 @@ with open("input_parameters_v1.json", "r") as f:
 DEBUG = PARAMS.get("DEBUG", False)
 EVAL_MODE = PARAMS.get("evaluation", False)
 CREATE_NEW = PARAMS.get("create_new_model", True)
-ALGO_TYPE = PARAMS.get("algo_type", "PPO").upper()
 
 LOG_DIR = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M%S"))
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -56,7 +53,7 @@ class CRIOUDPEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.step_count = 0
-        obs, _ = self._receive_observation()
+        obs, aux_obs = self._receive_observation()
         return obs, {}
 
     def step(self, action):
@@ -73,8 +70,9 @@ class CRIOUDPEnv(gym.Env):
         )
 
         obs, aux_obs = self._receive_observation()
-        reward = (SCALAR_REW - obs[2]) / SCALAR_REW
 
+        reward = (SCALAR_REW - obs[2]) / SCALAR_REW
+        # Log reward to file
         with open(os.path.join(LOG_DIR, "live_rewards.csv"), "a") as f:
             f.write(f"{self.step_count},{reward},{self.timestamp}\n")
 
@@ -85,9 +83,14 @@ class CRIOUDPEnv(gym.Env):
         if DEBUG:
             print("Received obs:", reward, "action used:", aux_obs, "ts:", self.timestamp)
 
+
+        #if DEBUG:
+         #   print(f"{self.step_count};{raw_action};{obs[2]:.6f};{reward:.4f}")
+
         return obs, reward, terminated, truncated, {}
 
     def _receive_observation(self):
+        # Vaciar el buffer UDP
         sock_recv.setblocking(False)
         while True:
             try:
@@ -95,17 +98,24 @@ class CRIOUDPEnv(gym.Env):
             except BlockingIOError:
                 break
 
+        # Recibir siguiente observación
+
         sock_recv.setblocking(True)
-        TOTAL_DESCARTE = 3
-        for _ in range(TOTAL_DESCARTE + 1): 
+
+        TOTAL_DESCARTE = 10
+
+        for i_descarte in range(TOTAL_DESCARTE + 1): 
+            sock_recv.setblocking(True)
             data, _ = sock_recv.recvfrom(1024)
             parts = data.decode().strip().split(";")
-            aux_obs = np.array([float(x) for x in parts[1:6]], dtype=np.float32)
+            aux_obs = np.array([float(x) for x in parts[1:6]], dtype=np.float32)        
             print(f"descarte: rew = {(SCALAR_REW - aux_obs[2]) / SCALAR_REW}; action = {aux_obs[4]})")
+        
         sock_recv.setblocking(False)
 
         self.timestamp = int(parts[0])
         self.last_obs = np.array([float(x) for x in parts[1:5]], dtype=np.float32)
+
 
         return self.last_obs, aux_obs[4]
 
@@ -119,58 +129,20 @@ def make_env():
 
 env = DummyVecEnv([make_env])
 
-# === Model setup ===
-model_name = f"{ALGO_TYPE.lower()}_crio"
-model_path = os.path.join(LOG_DIR, model_name)
-
-# === Choose algorithm ===
+# === PPO model setup ===
+model_path = os.path.join(LOG_DIR, "ppo_crio")
 if CREATE_NEW or not os.path.exists(model_path + ".zip"):
-    if ALGO_TYPE == "PPO":
-        model = PPO(
-            "MlpPolicy", env, verbose=1,
-            learning_rate=PARAMS.get("ppo_learning_rate", 1e-3),
-            device="cpu",
-            n_steps=N_STEPS, batch_size=BATCH_SIZE, n_epochs=N_EPOCHS,
-            tensorboard_log=LOG_DIR,
-            policy_kwargs=dict(net_arch=[PARAMS["hidden_units"]] * 2),
-        )
-    elif ALGO_TYPE == "DDPG":
-
-        # Setup action noise (required for DDPG exploration)
-        n_actions = env.action_space.shape[0]
-        action_noise = OrnsteinUhlenbeckActionNoise(
-            mean=np.zeros(n_actions),
-            sigma=PARAMS.get("ou_sigma", 0.1) * np.ones(n_actions)
-        )
-
-        model = DDPG(
-            "MlpPolicy",
-            env,
-            verbose=1,
-            learning_rate=PARAMS.get("ddpg_learning_rate", 1e-3),
-            buffer_size=PARAMS.get("buffer_size", 50),
-            batch_size=PARAMS.get("batch_size", 10),
-            tau=PARAMS.get("tau", 0.005),
-            gamma=PARAMS.get("gamma", 0.99),
-            learning_starts=PARAMS.get("learning_starts", 1),
-            train_freq=PARAMS.get("train_freq", (1, "step")),
-            gradient_steps=PARAMS.get("gradient_steps", 1),
-            action_noise=action_noise,
-            tensorboard_log=LOG_DIR,
-            policy_kwargs=dict(net_arch=[PARAMS["hidden_units"]] * 2),
-        )
-    else:
-        raise ValueError(f"Unsupported algo_type: {ALGO_TYPE}")
-
-    print(f"{ALGO_TYPE} configured and initialized.")
+    model = PPO(
+        "MlpPolicy", env, verbose=1,
+        learning_rate=PARAMS.get("ppo_learning_rate", 1e-3),
+        n_steps=N_STEPS, batch_size=BATCH_SIZE, n_epochs=N_EPOCHS,
+        tensorboard_log=LOG_DIR,
+        policy_kwargs=dict(net_arch=[PARAMS["hidden_units"]] * 2),
+    )
+    print(f"PPO configured: n_steps={N_STEPS}, batch_size={BATCH_SIZE}, n_epochs={N_EPOCHS}")
 else:
-    if ALGO_TYPE == "PPO":
-        model = PPO.load(model_path, env=env)
-    elif ALGO_TYPE == "DDPG":
-        model = DDPG.load(model_path, env=env)
-    else:
-        raise ValueError(f"Unsupported algo_type: {ALGO_TYPE}")
-    print(f"Loaded existing {ALGO_TYPE} model.")
+    model = PPO.load(model_path, env=env)
+    print("Loaded existing model.")
 
 # === Training or evaluation ===
 if not EVAL_MODE:
@@ -180,11 +152,12 @@ if not EVAL_MODE:
     monitor_files = glob.glob(os.path.join(LOG_DIR, "*monitor.csv"))
     print("Monitor files found:", monitor_files)
     if not monitor_files:
-        raise RuntimeError("No monitor CSV found. Check that total_timesteps >= n_steps")
+        raise RuntimeError("No monitor CSV found. "
+                           "Check that total_timesteps >= n_steps to allow PPO updates.")
 
     results = load_results(LOG_DIR)
     x, y = ts2xy(results, "timesteps")
-    plot_results([results], LOG_DIR, "timesteps", model_name)
+    plot_results([results], LOG_DIR, "timesteps", "ppo_crio")
     plt.savefig(os.path.join(LOG_DIR, "reward_vs_steps.png"))
     print("Saved plot: reward_vs_steps.png")
 
