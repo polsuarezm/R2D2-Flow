@@ -33,6 +33,7 @@ N_OBS_ARRAY = int(PARAMS["size_obs_array"])
 N_ACTUATOR_ARRAY = int(PARAMS["size_actuator_array"])
 MESSAGE_TYPE = int(PARAMS["message_type"])  # 1 for array, 2 for string
 SCALAR_REW = float(PARAMS["scalar_reward"])
+TOTAL_DESCARTE = int(PARAMS["total_descarte"])
 
 # === UDP setup ===
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -73,7 +74,8 @@ class CRIOUDPEnv(gym.Env):
         )
 
         obs, aux_obs = self._receive_observation()
-        reward = (SCALAR_REW - obs[2]) / SCALAR_REW
+        reward = obs[3]
+        print(f"| rew = {reward:.4f} | step:{self.step_count}")
 
         with open(os.path.join(LOG_DIR, "live_rewards.csv"), "a") as f:
             f.write(f"{self.step_count},{reward},{self.timestamp}\n")
@@ -83,7 +85,7 @@ class CRIOUDPEnv(gym.Env):
         truncated = False
 
         if DEBUG:
-            print("Received obs:", reward, "action used:", aux_obs, "ts:", self.timestamp)
+            print("Received rew:", reward, "action used:", aux_obs)
 
         return obs, reward, terminated, truncated, {}
 
@@ -96,18 +98,17 @@ class CRIOUDPEnv(gym.Env):
                 break
 
         sock_recv.setblocking(True)
-        TOTAL_DESCARTE = 3
         for _ in range(TOTAL_DESCARTE + 1): 
             data, _ = sock_recv.recvfrom(1024)
             parts = data.decode().strip().split(";")
-            aux_obs = np.array([float(x) for x in parts[1:6]], dtype=np.float32)
-            print(f"descarte: rew = {(SCALAR_REW - aux_obs[2]) / SCALAR_REW}; action = {aux_obs[4]}) / ts = {int(parts[0])}")
+            aux_obs = np.array([float(x) for x in parts[1:5]], dtype=np.float32)
+            #print(f"descarte: rew = {(SCALAR_REW - aux_obs[3]) / SCALAR_REW} / ts = {int(parts[0])}")
         sock_recv.setblocking(False)
 
         self.timestamp = int(parts[0])
         self.last_obs = np.array([float(x) for x in parts[1:5]], dtype=np.float32)
 
-        return self.last_obs, aux_obs[4]
+        return self.last_obs, aux_obs[-1]
 
     def render(self, mode="human"): pass
     def close(self): pass
@@ -152,7 +153,7 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
             batch_size=PARAMS.get("batch_size", 120),
             tau=PARAMS.get("tau", 0.05),
             gamma=PARAMS.get("gamma", 0.99),
-            learning_starts=PARAMS.get("learning_starts", 1),
+            learning_starts=PARAMS.get("learning_starts", 100),
             train_freq=PARAMS.get("train_freq", (10, "step")),
             gradient_steps=PARAMS.get("gradient_steps", 1),
             action_noise=action_noise,

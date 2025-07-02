@@ -13,65 +13,69 @@ SEND_IP = PARAMS["debug_ip"]
 SEND_PORT = PARAMS["udp_port_recv"]
 
 MESSAGE_TYPE = PARAMS["message_type"]
-N_OBS_ARRAY = PARAMS["size_obs_array"]+1
-N_ACT_ARRAY = PARAMS["size_actuator_array"]+1
+N_OBS_ARRAY = PARAMS["size_obs_array"]
+N_ACT_ARRAY = PARAMS["size_actuator_array"]
+DELTA_T = PARAMS["delta_t"]
+
+# === State initialization ===
 counter = 0
+t = 0.0
+dt = 0.1
+state = np.random.uniform(-1, 1, size=N_OBS_ARRAY)
+obs = np.zeros(N_OBS_ARRAY, dtype=np.float32)
+action = [0.0] * N_ACT_ARRAY  # ensure it's always a list
 
 # === UDP Setup ===
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv.bind((RECV_IP, RECV_PORT))
-sock_recv.settimeout(1.0)  # 1 second timeout
+sock_recv.settimeout(0.15)
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-# === Global state ===
-t = 0.0
-dt = 0.1
-state = np.random.uniform(-1, 1, size=N_OBS_ARRAY)
-
-def system_step(action):
+# === System functions ===
+def system_step_maxfun(action):
     global state, t
-    A = np.eye(N_OBS_ARRAY) * 0.9
-    for i in range(N_OBS_ARRAY - 1):
-        A[i, i + 1] = 0.1
     act = np.array(action[:N_OBS_ARRAY])
-    nonlinear = 0.05 * np.sin(t + state)
+    fun = (-act**4 + act**3) * 10
     noise = np.random.normal(0, 0.01, size=N_OBS_ARRAY)
-    state = A @ state + 0.1 * act + nonlinear + noise
-    t += dt
+    state = fun + noise
+    time.sleep(DELTA_T)
     return state.tolist()
 
 def fallback_random_obs():
     return np.random.uniform(-1, 1, size=N_OBS_ARRAY).tolist()
 
-# === Main Loop ===
+# === Main loop ===
 print(f"Simulator listening on {RECV_IP}:{RECV_PORT}")
 while True:
-    counter = counter + 1
+    counter += 1
     try:
-        data, addr = sock_recv.recvfrom(2048)
+        data, addr = sock_recv.recvfrom(1024)
         msg = data.decode().strip()
         parts = msg.split(";")
         timestamp = int(parts[0])
-        action = [float(x) for x in parts[7:7 + N_ACT_ARRAY]]  # adapt if needed
-        obs = system_step(action)
-        print(f"Recv action: {action} → Send obs: {obs}")
+
+        action = [float(x) for x in parts[7:7 + N_ACT_ARRAY]]
+
+        last_obs = system_step_maxfun(action)
+
+        # Shift obs history and update obs[3]
+        obs[0], obs[1], obs[2] = obs[1], obs[2], obs[3]
+        obs[3] = last_obs[0]
 
     except socket.timeout:
-        # No action received → fallback mode
         timestamp = int(time.time() * 1000)
+        print(f"missing - {counter}")
         obs = fallback_random_obs()
-        print(f"[timeout fallback] → Send random obs: {obs}")
-
+        action = [0.0] * N_ACT_ARRAY  # dummy action
     except Exception as e:
-        print("Error:", e)
-        time.sleep(0.1)
+        print(f"[ERROR] {e}")
         continue
 
-    # Send observation back
+    # Format and send response
     if MESSAGE_TYPE == 1:
-        response = f"{timestamp};" + ";".join(f"{v:.6f}" for v in obs) + f"{counter}"
+        response = f"{timestamp};" + ";".join(map(str, obs)) + ";" + ";".join(map(str, action))
     else:
         response = f"{timestamp};" + "".join(str(int(v)) for v in obs)
 
     sock_send.sendto(response.encode(), (SEND_IP, SEND_PORT))
-    time.sleep(0.05)
+    print(f"Recv action: {action} → Send obs: {response}")
