@@ -23,7 +23,7 @@ ALGO_TYPE = PARAMS.get("algo_type", "PPO").upper()
 
 model_path = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs/DDPG_V1_20250702-141746"
 
-LOG_DIR = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M%S"))
+LOG_DIR = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M"))
 os.makedirs(LOG_DIR, exist_ok=True)
 
 ACTION_MIN = float(PARAMS["action_min"])
@@ -43,7 +43,7 @@ sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 sock_recv.setblocking(False)
-sock_recv.bind((PARAMS["crio_ip"], PARAMS["udp_port_recv"]))
+sock_recv.bind((PARAMS["hp_ip"], PARAMS["udp_port_recv"]))
 print(f"Listening on {PARAMS['hp_ip']}:{PARAMS['udp_port_recv']}")
 
 # === Environment ===
@@ -79,11 +79,11 @@ class CRIOUDPEnv(gym.Env):
 
         sock_send.sendto(
             message.encode(),
-            (PARAMS["hp_ip"], PARAMS["udp_port_send"])
+            (PARAMS["crio_ip"], PARAMS["udp_port_send"])
         )
 
         obs, aux_obs = self._receive_observation()
-        reward = obs[3]
+        reward = 1-obs[2]/SCALAR_REW
         if self.step_count%10==0: 
             print(f"| rew = {reward:.4f} | action = {action} | step = {self.step_count}")
 
@@ -150,8 +150,10 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
             batch_size=BATCH_SIZE, 
             n_epochs=N_EPOCHS,
             tensorboard_log=LOG_DIR,
+
             policy_kwargs=dict(
-                net_arch=dict(pi=actor_layers, vf=critic_layers)
+                net_arch=dict(pi=actor_layers, vf=critic_layers),
+                log_std_init = PARAMS.get("ppo_log_std", -0.5)
             )
         )
 
@@ -182,7 +184,7 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
             action_noise=action_noise,
             tensorboard_log=LOG_DIR,
             policy_kwargs=dict(
-                net_arch=dict(pi=actor_layers, qf=critic_layers)
+                net_arch=dict(pi=actor_layers, qf=critic_layers),
             )
         )
 
