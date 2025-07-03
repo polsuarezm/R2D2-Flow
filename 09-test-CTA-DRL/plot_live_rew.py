@@ -5,7 +5,7 @@ import io
 import os
 
 # === Configuration ===
-CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1339/live_rewards.csv"
+CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1424/live_rewards.csv"
 OUTPUT_PNG = "last_reward_plot.png"
 PLOT_INTERVAL_SEC = 1.0
 
@@ -38,7 +38,7 @@ while True:
             axs[0].set_ylim(-1.5, 1.5)
             axs[0].grid(True)
             axs[0].legend()
-            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=1, alpha=0.1, color='blue')
+            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=2, alpha=0.8, color='blue')
             axs[1].set_xlabel("step")
             axs[1].set_ylabel("action")
             axs[1].set_title("action vs step")

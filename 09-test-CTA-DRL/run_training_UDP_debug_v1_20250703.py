@@ -150,7 +150,7 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
             batch_size=BATCH_SIZE, 
             n_epochs=N_EPOCHS,
             tensorboard_log=LOG_DIR,
-
+            gamma=PARAMS.get("ppo_gamma", 0.5),
             policy_kwargs=dict(
                 net_arch=dict(pi=actor_layers, vf=critic_layers),
                 log_std_init = PARAMS.get("ppo_log_std", -0.5)
