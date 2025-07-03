@@ -21,6 +21,8 @@ EVAL_MODE = PARAMS.get("evaluation", False)
 CREATE_NEW = PARAMS.get("create_new_model", True)
 ALGO_TYPE = PARAMS.get("algo_type", "PPO").upper()
 
+model_path = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs/DDPG_V1_20250702-141746"
+
 LOG_DIR = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M%S"))
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -35,9 +37,11 @@ MESSAGE_TYPE = int(PARAMS["message_type"])  # 1 for array, 2 for string
 SCALAR_REW = float(PARAMS["scalar_reward"])
 TOTAL_DESCARTE = int(PARAMS["total_descarte"])
 
+
 # === UDP setup ===
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
 sock_recv.setblocking(False)
 sock_recv.bind((PARAMS["debug_ip"], PARAMS["udp_port_recv"]))
 print(f"Listening on {PARAMS['debug_ip']}:{PARAMS['udp_port_recv']}")
@@ -52,12 +56,17 @@ class CRIOUDPEnv(gym.Env):
         self.action_space = spaces.Box(ACTION_MIN, ACTION_MAX, (N_ACTUATOR_ARRAY,), dtype=np.float32)
         self.timestamp = 0
         self.step_count = 0
+        self.global_step = 0
         self.last_obs = np.zeros(N_OBS_ARRAY, dtype=np.float32)
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.step_count = 0
-        obs, _ = self._receive_observation()
+        
+        if EVAL_MODE: 
+            obs = [1,1,1,1]
+        else:
+            obs, _ = self._receive_observation()
         return obs, {}
 
     def step(self, action):
@@ -75,10 +84,12 @@ class CRIOUDPEnv(gym.Env):
 
         obs, aux_obs = self._receive_observation()
         reward = obs[3]
-        print(f"| rew = {reward:.4f} | step:{self.step_count}")
+        if self.step_count%10==0: 
+            print(f"| rew = {reward:.4f} | action = {action} | step = {self.step_count}")
 
         with open(os.path.join(LOG_DIR, "live_rewards.csv"), "a") as f:
-            f.write(f"{self.step_count},{reward},{self.timestamp}\n")
+            self.global_step = self.global_step + 1
+            f.write(f"{self.global_step},{obs[0]},{obs[1]},{obs[2]},{obs[3]},{reward},{action[0]},{self.timestamp}\n")
 
         self.step_count += 1
         terminated = self.step_count >= PARAMS["episode_length"]
@@ -122,26 +133,37 @@ env = DummyVecEnv([make_env])
 
 # === Model setup ===
 model_name = f"{ALGO_TYPE.lower()}_crio"
-model_path = os.path.join(LOG_DIR, model_name)
+#model_path = os.path.join(LOG_DIR, model_name)
 
 # === Choose algorithm ===
 if CREATE_NEW or not os.path.exists(model_path + ".zip"):
     if ALGO_TYPE == "PPO":
+        actor_layers = PARAMS.get("actor_layers", [8])
+        critic_layers = PARAMS.get("critic_layers", [16, 64, 64])
+
         model = PPO(
             "MlpPolicy", env, verbose=1,
             learning_rate=PARAMS.get("ppo_learning_rate", 1e-3),
             device="cpu",
-            n_steps=N_STEPS, batch_size=BATCH_SIZE, n_epochs=N_EPOCHS,
+            n_steps=N_STEPS, 
+            batch_size=BATCH_SIZE, 
+            n_epochs=N_EPOCHS,
             tensorboard_log=LOG_DIR,
-            policy_kwargs=dict(net_arch=[PARAMS["hidden_units"]] * 2),
+            policy_kwargs=dict(
+                net_arch=dict(pi=actor_layers, vf=critic_layers)
+            )
         )
+
     elif ALGO_TYPE == "DDPG":
 
-        # Setup action noise (required for DDPG exploration)
+        actor_layers = PARAMS.get("actor_layers", [64, 64])
+        critic_layers = PARAMS.get("critic_layers", [64, 64])
+
+        # Setup action noise
         n_actions = env.action_space.shape[0]
         action_noise = OrnsteinUhlenbeckActionNoise(
             mean=np.zeros(n_actions),
-            sigma=PARAMS.get("ou_sigma", 0.1)*np.ones(n_actions)
+            sigma=PARAMS.get("ou_sigma", 0.1) * np.ones(n_actions)
         )
 
         model = DDPG(
@@ -149,17 +171,20 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
             env,
             verbose=1,
             learning_rate=PARAMS.get("ddpg_learning_rate", 1e-3),
-            buffer_size=PARAMS.get("buffer_size", 1000),
-            batch_size=PARAMS.get("batch_size", 120),
-            tau=PARAMS.get("tau", 0.05),
+            buffer_size=PARAMS.get("buffer_size", 100000),
+            batch_size=PARAMS.get("batch_size", 128),
+            tau=PARAMS.get("tau", 0.005),
             gamma=PARAMS.get("gamma", 0.99),
             learning_starts=PARAMS.get("learning_starts", 100),
-            train_freq=PARAMS.get("train_freq", (10, "step")),
+            train_freq=PARAMS.get("train_freq", (1, "step")),
             gradient_steps=PARAMS.get("gradient_steps", 1),
             action_noise=action_noise,
             tensorboard_log=LOG_DIR,
-            policy_kwargs=dict(net_arch=[PARAMS["hidden_units"]] * 2),
+            policy_kwargs=dict(
+                net_arch=dict(pi=actor_layers, qf=critic_layers)
+            )
         )
+
     else:
         raise ValueError(f"Unsupported algo_type: {ALGO_TYPE}")
 
@@ -167,6 +192,7 @@ if CREATE_NEW or not os.path.exists(model_path + ".zip"):
 else:
     if ALGO_TYPE == "PPO":
         model = PPO.load(model_path, env=env)
+
     elif ALGO_TYPE == "DDPG":
         model = DDPG.load(model_path, env=env)
     else:
@@ -198,7 +224,6 @@ else:
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, done, truncated = env.step(action)
             total += reward
-        print(f"Eval Episode {ep+1}: Total Reward = {total:.2f}")
 
 # === Cleanup ===
 sock_send.close()
