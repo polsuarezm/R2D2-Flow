@@ -5,8 +5,10 @@ import io
 import os
 
 # === Configuration ===
-CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1424/live_rewards.csv"
-OUTPUT_PNG = "last_reward_plot.png"
+#CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1717/live_rewards.csv"
+CSV_FILE = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1841/live_rewards.csv"
+
+OUTPUT_PNG = "last_reward_plot_debugeval.png"
 PLOT_INTERVAL_SEC = 1.0
 
 # === Safe CSV reader for parallel writes ===
@@ -35,7 +37,7 @@ while True:
             axs[0].set_xlabel("Step")
             axs[0].set_ylabel("Reward")
             axs[0].set_title("Reward vs Step")
-            axs[0].set_ylim(-1.5, 1.5)
+            #axs[0].set_ylim(-10, 10)
             axs[0].grid(True)
             axs[0].legend()
             axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=2, alpha=0.8, color='blue')
@@ -54,8 +56,8 @@ while True:
             axs[3].set_xlabel("action")
             axs[3].set_ylabel("reward")
             axs[3].set_title("action vs reward")
-            axs[3].set_xlim(-1.1, 1.1)
-            axs[3].set_ylim(-0.5, 1)
+            axs[3].set_xlim(-3, 3)
+            #axs[3].set_ylim(-0.5, 1)
             axs[3].grid(True)
             axs[3].legend()
 
