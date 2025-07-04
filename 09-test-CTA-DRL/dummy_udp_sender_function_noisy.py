@@ -83,7 +83,7 @@ while True:
 
         action = [float(x) for x in parts[7:7 + N_ACT_ARRAY]]
         last_obs = system_step_peak_spikes(action,
-                                           peak_center=8.0,
+                                           peak_center=5.0,
                                            peak_width=1.0,
                                            peak_amplitude=2.0,
                                            noise_level=1.0,

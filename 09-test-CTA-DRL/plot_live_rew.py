@@ -42,7 +42,7 @@ while True:
             axs[0].grid(True)
             axs[0].legend()
             axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=3, alpha=0.05, color='blue')
-            axs[1].axhline(8, color='black', linestyle='--', linewidth=3, alpha=0.7, label="reward = -0.8")
+            axs[1].axhline(5, color='black', linestyle='--', linewidth=3, alpha=0.7, label="reward = -0.8")
             axs[1].set_xlabel("step")
             axs[1].set_ylabel("action")
             axs[1].set_title("action vs step")
