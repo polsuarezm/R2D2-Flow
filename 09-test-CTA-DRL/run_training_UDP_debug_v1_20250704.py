@@ -1,4 +1,4 @@
-# === Full Training Script with Enhanced TensorBoard Logging ===
+# === Full Training Script with Enhanced TensorBoard Logging and EvalCallback ===
 import socket, json, os, glob
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,7 +12,7 @@ from stable_baselines3 import PPO, DDPG
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, CallbackList
 from stable_baselines3.common.logger import configure
 
 # === Custom TensorBoard Logging Callback ===
@@ -166,7 +166,15 @@ model = None
 model_name = f"{ALGO_TYPE.lower()}_crio"
 
 if CREATE_NEW or not os.path.exists(MODEL_PATH + ".zip"):
-    callback = TensorboardLoggingCallback()
+    eval_callback = EvalCallback(
+        env,
+        best_model_save_path=LOG_DIR,
+        log_path=LOG_DIR,
+        eval_freq=PARAMS.get("eval_freq", 5000),
+        deterministic=True,
+        render=False
+    )
+    callback = CallbackList([TensorboardLoggingCallback(), eval_callback])
 
     if ALGO_TYPE == "PPO":
         model = PPO(
