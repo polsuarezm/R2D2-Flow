@@ -21,10 +21,10 @@ class TensorboardLoggingCallback(BaseCallback):
         super().__init__(verbose)
 
     def _on_step(self) -> bool:
-        env = self.training_env.envs[0]
-        self.logger.record("custom/reward", env.last_reward)
-        self.logger.record("custom/action", env.last_action)
-        self.logger.record("custom/step_count", env.step_count)
+        base_env = self.training_env.envs[0].env  # unwrap Monitor
+        self.logger.record("custom/reward", base_env.last_reward)
+        self.logger.record("custom/action", base_env.last_action)
+        self.logger.record("custom/step_count", base_env.step_count)
         return True
 
 # === Load configuration ===
