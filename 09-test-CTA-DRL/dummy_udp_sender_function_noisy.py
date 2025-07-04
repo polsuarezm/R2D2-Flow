@@ -96,6 +96,9 @@ while True:
         else:
             obs[0], obs[1], obs[2] = obs[1], obs[2], obs[3]
             obs[3] = last_obs[0]
+            # Redefine first two values
+            obs[0] = np.random.normal(loc=1.0, scale=0.01)     # tightly around 1
+            obs[1] = np.random.uniform(low=-2.0, high=2.0)      # wide random
 
     except socket.timeout:
         timestamp = int(time.time() * 1000)

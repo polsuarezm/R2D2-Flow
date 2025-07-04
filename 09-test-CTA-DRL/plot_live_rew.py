@@ -34,15 +34,15 @@ while True:
             fig, axs = plt.subplots(4, 1, figsize=(13, 10))  # 1 row, 2 columns
 
             # Plot 1: Reward vs Step
-            axs[0].plot(df["step"], df["reward"], label="Reward", linewidth=1.5, color='black', marker='o', markersize=4, alpha=0.05)
+            axs[0].plot(df["step"], df["reward"], label="Reward", linewidth=1.5, color='black', marker='o', markersize=4, alpha=0.005)
             axs[0].set_xlabel("Step")
             axs[0].set_ylabel("Reward")
             axs[0].set_title("Reward vs Step")
-            #axs[0].set_ylim(-10, 10)
+            axs[0].set_ylim(-2, 2)
             axs[0].grid(True)
             axs[0].legend()
-            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=3, alpha=0.05, color='blue')
-            axs[1].axhline(5, color='black', linestyle='--', linewidth=3, alpha=0.7, label="reward = -0.8")
+            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=3, alpha=0.01, color='blue')
+            axs[1].axhline(5, color='black', linestyle='--', linewidth=10, alpha=0.2, label="reward = -0.8")
             axs[1].set_xlabel("step")
             axs[1].set_ylabel("action")
             axs[1].set_title("action vs step")
@@ -54,7 +54,7 @@ while True:
             axs[3].set_title("obs[3] vs obs[2]")
             axs[3].grid(True)
             axs[3].legend()
-            axs[2].plot(df["action"], df["reward"], 'o', label="action vs obs2", markersize=2, alpha=0.3, color='green')
+            axs[2].plot(df["action"], df["reward"], 'o', label="action vs obs2", markersize=2, alpha=0.05, color='green')
             axs[2].set_xlabel("action")
             axs[2].set_ylabel("reward")
             axs[2].set_title("action vs reward")
