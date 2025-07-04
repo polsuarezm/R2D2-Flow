@@ -3,14 +3,22 @@ import pandas as pd
 import time
 import io
 import os
+import json
+import numpy as np
 
 # === Configuration ===
 #CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1717/live_rewards.csv"
 #CSV_FILE = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1841/live_rewards.csv"
+with open("input_parameters_v1_20250704_debugip.json", "r") as f:
+    PARAMS = json.load(f)
+
 CSV_FILE = "./live_rewards_temp.csv"
 
 OUTPUT_PNG = "last_reward_plot_debugeval.png"
 PLOT_INTERVAL_SEC = 1.0
+EVAL_FREQ=PARAMS.get("eval_freq", 5000)
+EPS_LENGTH = PARAMS.get("episode_length", 100)
+N_EVAL_EPS = PARAMS.get("n_eval_episodes", 1)
 
 # === Safe CSV reader for parallel writes ===
 def read_csv_safely(path):
@@ -43,11 +51,40 @@ while True:
             axs[0].legend()
             axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=3, alpha=0.01, color='blue')
             axs[1].axhline(5, color='black', linestyle='--', linewidth=10, alpha=0.2, label="reward = -0.8")
+            axs[1].axvline(5, color='black', linestyle='--', linewidth=10, alpha=0.2, label="reward = -0.8")
+            x_max = df["step"].max()
+
+            # Create a boolean mask for evaluation intervals
+            in_eval = np.full(len(df), False)
+
+            for x in range(0, x_max + 1, EVAL_FREQ):
+                start = x
+                end = x + EPS_LENGTH * N_EVAL_EPS
+                in_eval |= (df["step"] >= start) & (df["step"] <= end)
+
+            # Plot actions outside eval in blue
+            axs[1].plot(df["step"][~in_eval], df["action"][~in_eval], 'o',
+                        label="train", markersize=3, alpha=0.01, color='blue')
+
+            # Plot actions during eval in black
+            axs[1].plot(df["step"][in_eval], df["action"][in_eval], 'o',
+                        label="eval", markersize=3, alpha=0.05, color='black')
+
+            # Add static horizontal/vertical lines for context
+            axs[1].axhline(5, color='black', linestyle='--', linewidth=10, alpha=0.2, label="reward = -0.8")
+            axs[1].axvline(5, color='black', linestyle='--', linewidth=10, alpha=0.2)
+
+            # Add eval interval markers
+            for x in range(0, x_max + 1, EVAL_FREQ):
+                axs[1].axvline(x, color='black', linestyle='-', linewidth=0.5, alpha=0.8)
+                #axs[1].axvline(x + EPS_LENGTH * N_EVAL_EPS, color='black', linestyle='-', linewidth=0.5, alpha=0.8)
+
+            # Labeling and formatting
             axs[1].set_xlabel("step")
+            axs[1].set_xlim(0, df["step"].max())
             axs[1].set_ylabel("action")
             axs[1].set_title("action vs step")
             axs[1].grid(True)
-            axs[1].legend()
             axs[3].plot(df["obs2"], df["obs3"], 'o', label="obs3 vs obs2", markersize=3, alpha=0.05, color='red')
             axs[3].set_xlabel("obs[2]")
             axs[3].set_ylabel("obs[3]")
@@ -64,7 +101,7 @@ while True:
             axs[2].legend()
 
             plt.tight_layout()
-            plt.savefig(OUTPUT_PNG)
+            plt.savefig(OUTPUT_PNG, dpi=800)
             plt.close()
         #time.sleep(PLOT_INTERVAL_SEC)
     except KeyboardInterrupt:

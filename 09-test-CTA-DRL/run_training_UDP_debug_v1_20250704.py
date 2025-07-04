@@ -166,13 +166,15 @@ model = None
 model_name = f"{ALGO_TYPE.lower()}_crio"
 
 if CREATE_NEW or not os.path.exists(MODEL_PATH + ".zip"):
+
     eval_callback = EvalCallback(
-        env,
-        best_model_save_path=LOG_DIR,
-        log_path=LOG_DIR,
-        eval_freq=PARAMS.get("eval_freq", 5000),
-        deterministic=True,
-        render=False
+    env,
+    best_model_save_path=LOG_DIR,
+    log_path=LOG_DIR,
+    eval_freq=PARAMS.get("eval_freq", 5000),
+    n_eval_episodes=PARAMS.get("n_eval_episodes", 1),  # <--- added
+    deterministic=True,
+    render=False
     )
     callback = CallbackList([TensorboardLoggingCallback(), eval_callback])
 

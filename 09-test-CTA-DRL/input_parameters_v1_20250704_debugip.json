@@ -9,6 +9,8 @@
   "reward_type": "",
   "training": true,
   "evaluation": false,
+  "eval_freq": 5000,
+  "n_eval_episodes": 5,
   "episode_length": 40,
   "total_episodes": 10000,
   "create_new_model": true,
