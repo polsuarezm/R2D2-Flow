@@ -1,3 +1,4 @@
+# === Full Training Script with Enhanced TensorBoard Logging ===
 import socket, json, os, glob
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,6 +12,20 @@ from stable_baselines3 import PPO, DDPG
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.logger import configure
+
+# === Custom TensorBoard Logging Callback ===
+class TensorboardLoggingCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+    def _on_step(self) -> bool:
+        env = self.training_env.envs[0]
+        self.logger.record("custom/reward", env.last_reward)
+        self.logger.record("custom/action", env.last_action)
+        self.logger.record("custom/step_count", env.step_count)
+        return True
 
 # === Load configuration ===
 with open("input_parameters_v1_20250704_debugip.json", "r") as f:
@@ -65,18 +80,16 @@ class CRIOUDPEnv(gym.Env):
         self.step_count = 0
         self.global_step = 0
         self.last_obs = np.zeros(N_OBS_ARRAY, dtype=np.float32)
+        self.last_reward = 0.0
+        self.last_action = 0.0
 
-        # Delete if it already exists
         if os.path.exists("live_rewards_temp.csv"):
             os.remove("live_rewards_temp.csv")
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.step_count = 0
-        if EVAL_MODE:
-            obs = np.ones(N_OBS_ARRAY)
-        else:
-            obs = self._receive_observation()
+        obs = np.ones(N_OBS_ARRAY) if EVAL_MODE else self._receive_observation()
         return obs, {}
 
     def step(self, action):
@@ -89,20 +102,19 @@ class CRIOUDPEnv(gym.Env):
 
         sock_send.sendto(message.encode(), (send_ip, PARAMS["udp_port_send"]))
         obs = self._receive_observation()
-        print(f"Received observation: {obs}")
-        if REWARD_TYPE=="CTA":
-            reward = self._compute_reward_peak_fft_v1(obs)
-        else:
-            reward = self._compute_reward_debug_internalUDP(obs)
+
+        reward = self._compute_reward_peak_fft_v1(obs) if REWARD_TYPE == "CTA" else self._compute_reward_debug_internalUDP(obs)
 
         if self.step_count % 10 == 0:
             print(f"| rew = {reward:.4f} | action = {action} | step = {self.step_count}")
 
+        action_val = action[0] if isinstance(action, (list, np.ndarray)) else float(action)
+        self.last_action = action_val
+        self.last_reward = reward
+
         with open(os.path.join(LOG_DIR, "live_rewards.csv"), "a") as archive_file, \
-            open("live_rewards_temp.csv", "a") as tmp_file:
+             open("live_rewards_temp.csv", "a") as tmp_file:
             self.global_step += 1
-            #f.write(f"{self.global_step},{obs[0]},{obs[1]},{obs[2]},{obs[3]},{reward},{action[0]},{self.timestamp}\n")
-            action_val = action[0] if isinstance(action, (list, np.ndarray)) else float(action)
             archive_file.write(f"{self.global_step},{reward},{action_val},{self.timestamp},{obs[-4]},{obs[-3]},{obs[-2]},{obs[-1]}\n")
             tmp_file.write(f"{self.global_step},{reward},{action_val},{self.timestamp},{obs[-4]},{obs[-3]},{obs[-2]},{obs[-1]}\n")
 
@@ -120,35 +132,29 @@ class CRIOUDPEnv(gym.Env):
         sock_recv.setblocking(True)
 
         accumulated_parts = np.zeros(N_OBS_ARRAY_PER_UDP * (TOTAL_DESCARTE + 1), dtype=np.float32)
-
         for i in range(TOTAL_DESCARTE + 1):
             data, _ = sock_recv.recvfrom(1024)
             parts = data.decode().strip().split(";")
             aux_obs = np.array([float(x) for x in parts[1:5]], dtype=np.float32)
-
             start = i * N_OBS_ARRAY_PER_UDP
             accumulated_parts[start:start + N_OBS_ARRAY_PER_UDP] = aux_obs
-                
 
         sock_recv.setblocking(False)
         self.timestamp = int(parts[0])
         self.last_obs = accumulated_parts[:N_OBS_ARRAY]
-        
         return self.last_obs
-    
+
     def _compute_reward_peak_fft_v1(self, obs_pre_reward):
         aux = obs_pre_reward[-2]
-        reward = 1- aux/SCALAR_REW #in this case just to maximise the peak of the fft we a are getting everytime
-        return reward
-    
+        return 1 - aux / SCALAR_REW
+
     def _compute_reward_debug_internalUDP(self, obs_pre_reward):
-        reward = obs_pre_reward[-1]
-        return reward
+        return obs_pre_reward[-1]
 
     def render(self, mode="human"): pass
     def close(self): pass
 
-# === Create monitored env ===
+# === Environment setup ===
 def make_env():
     env = CRIOUDPEnv()
     return Monitor(env, filename=os.path.join(LOG_DIR, "env_monitor"))
@@ -160,6 +166,8 @@ model = None
 model_name = f"{ALGO_TYPE.lower()}_crio"
 
 if CREATE_NEW or not os.path.exists(MODEL_PATH + ".zip"):
+    callback = TensorboardLoggingCallback()
+
     if ALGO_TYPE == "PPO":
         model = PPO(
             "MlpPolicy", env, verbose=1,
@@ -177,71 +185,18 @@ if CREATE_NEW or not os.path.exists(MODEL_PATH + ".zip"):
                 log_std_init=PARAMS.get("ppo_log_std_init", -0.5),
             ),
         )
-    elif ALGO_TYPE == "DDPG":
-        n_actions = env.action_space.shape[0]
-        action_noise = OrnsteinUhlenbeckActionNoise(
-            mean=np.zeros(n_actions),
-            sigma=PARAMS.get("ou_sigma", 0.1) * np.ones(n_actions),
-        )
-        model = DDPG(
-            "MlpPolicy", env, verbose=1,
-            learning_rate=PARAMS.get("ddpg_learning_rate", 1e-3),
-            buffer_size=PARAMS.get("buffer_size", 100000),
-            batch_size=PARAMS.get("batch_size", 128),
-            tau=PARAMS.get("tau", 0.005),
-            gamma=PARAMS.get("gamma", 0.99),
-            learning_starts=PARAMS.get("learning_starts", 100),
-            train_freq=PARAMS.get("train_freq", (1, "step")),
-            gradient_steps=PARAMS.get("gradient_steps", 1),
-            action_noise=action_noise,
-            tensorboard_log=LOG_DIR,
-            policy_kwargs=dict(
-                net_arch=dict(
-                    pi=PARAMS.get("actor_layers", [64, 64]),
-                    qf=PARAMS.get("critic_layers", [64, 64])),
-            ),
-        )
-else:
-    print(f"Loading model from: {MODEL_PATH}.zip")
-    model = PPO.load(MODEL_PATH, env=env) if ALGO_TYPE == "PPO" else DDPG.load(MODEL_PATH, env=env)
-    print(f"Loaded existing {ALGO_TYPE} model from: {MODEL_PATH}.zip")
+    else:
+        raise NotImplementedError("Only PPO supported in this script version.")
 
-# === Training or Evaluation ===
-if not EVAL_MODE:
     for i in range(int(PARAMS["total_episodes"] * PARAMS["episode_length"] // N_STEPS)):
-        model.learn(total_timesteps=N_STEPS, reset_num_timesteps=False)
+        model.learn(total_timesteps=N_STEPS, reset_num_timesteps=False, callback=callback)
         model.save(os.path.join(LOG_DIR, f"model_{ALGO_TYPE}_{datetime.now().strftime('%H%M%S')}"))
 
-    # Post-training evaluation
-    print("Training finished. Running 1 evaluation episode...")
-    obs = env.reset()[0]
-    done = False
-    eval_rewards = []
-    step_idx = 0
-    while not done:
-        action, _ = model.predict(obs, deterministic=True)
-        #obs, reward, done, _, _ = env.step(action)
-        obs, reward, done, info = env.step(action)
-        eval_rewards.append((step_idx, reward))
-        step_idx += 1
-
-    # Save evaluation rewards
-    eval_csv = os.path.join(LOG_DIR, "evaluation_rewards.csv")
-    with open(eval_csv, "w") as f:
-        f.write("step,reward\n")
-        for step, rew in eval_rewards:
-            f.write(f"{step},{rew}\n")
-    print(f"Evaluation episode complete. Saved to {eval_csv}")
-
 else:
-    for ep in range(PARAMS["total_episodes"]):
-        obs = env.reset()[0]
-        done = False
-        while not done:
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, done, _, _ = env.step(action)
+    model = PPO.load(MODEL_PATH, env=env)
+    print(f"Loaded existing {ALGO_TYPE} model from: {MODEL_PATH}.zip")
 
-# === Plot training monitor ===
+# === Training monitor ===
 monitor_files = glob.glob(os.path.join(LOG_DIR, "*monitor.csv"))
 if monitor_files:
     df = pd.read_csv(monitor_files[0], skiprows=1)
@@ -254,20 +209,6 @@ if monitor_files:
         plt.grid(True)
         plt.tight_layout()
         plt.savefig(os.path.join(LOG_DIR, "reward_vs_steps.png"))
-        print("Saved: reward_vs_steps.png")
-
-# === Plot evaluation rewards ===
-if os.path.exists(eval_csv):
-    df_eval = pd.read_csv(eval_csv)
-    plt.figure(figsize=(8, 4))
-    plt.plot(df_eval["step"], df_eval["reward"], marker="o")
-    plt.title("Evaluation Episode Rewards")
-    plt.xlabel("Step")
-    plt.ylabel("Reward")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(LOG_DIR, "evaluation_rewards.png"))
-    print("Saved: evaluation_rewards.png")
 
 sock_send.close()
 sock_recv.close()
