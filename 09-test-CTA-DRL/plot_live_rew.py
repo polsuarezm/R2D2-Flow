@@ -6,7 +6,8 @@ import os
 
 # === Configuration ===
 #CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1717/live_rewards.csv"
-CSV_FILE = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1841/live_rewards.csv"
+#CSV_FILE = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1841/live_rewards.csv"
+CSV_FILE = "./live_rewards_temp.csv"
 
 OUTPUT_PNG = "last_reward_plot_debugeval.png"
 PLOT_INTERVAL_SEC = 1.0
@@ -18,7 +19,7 @@ def read_csv_safely(path):
             lines = f.readlines()
             if not lines:
                 return None
-        df = pd.read_csv(io.StringIO("".join(lines)), header=None, names=["step", "obs0", "obs1", "obs2", "obs3", "reward", "action", "timestamp"])
+        df = pd.read_csv(io.StringIO("".join(lines)), header=None, names=["step", "reward", "action", "timestamp", "obs0", "obs1", "obs2", "obs3"])
         return df
     except Exception as e:
         print(f"[read_csv_safely] Warning: {e}")
@@ -33,33 +34,34 @@ while True:
             fig, axs = plt.subplots(4, 1, figsize=(13, 10))  # 1 row, 2 columns
 
             # Plot 1: Reward vs Step
-            axs[0].plot(df["step"], df["reward"], label="Reward", linewidth=1.5, color='black', marker='o', markersize=1, alpha=0.2)
+            axs[0].plot(df["step"], df["reward"], label="Reward", linewidth=1.5, color='black', marker='o', markersize=4, alpha=0.05)
             axs[0].set_xlabel("Step")
             axs[0].set_ylabel("Reward")
             axs[0].set_title("Reward vs Step")
             #axs[0].set_ylim(-10, 10)
             axs[0].grid(True)
             axs[0].legend()
-            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=2, alpha=0.8, color='blue')
+            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=3, alpha=0.05, color='blue')
+            axs[1].axhline(8, color='black', linestyle='--', linewidth=3, alpha=0.7, label="reward = -0.8")
             axs[1].set_xlabel("step")
             axs[1].set_ylabel("action")
             axs[1].set_title("action vs step")
             axs[1].grid(True)
             axs[1].legend()
-            axs[2].plot(df["obs2"], df["obs3"], 'o', label="obs3 vs obs2", markersize=3, alpha=0.05, color='red')
-            axs[2].set_xlabel("obs[2]")
-            axs[2].set_ylabel("obs[3]")
-            axs[2].set_title("obs[3] vs obs[2]")
-            axs[2].grid(True)
-            axs[2].legend()
-            axs[3].plot(df["action"], df["reward"], 'o', label="action vs obs2", markersize=2, alpha=0.3, color='green')
-            axs[3].set_xlabel("action")
-            axs[3].set_ylabel("reward")
-            axs[3].set_title("action vs reward")
-            axs[3].set_xlim(-3, 3)
-            #axs[3].set_ylim(-0.5, 1)
+            axs[3].plot(df["obs2"], df["obs3"], 'o', label="obs3 vs obs2", markersize=3, alpha=0.05, color='red')
+            axs[3].set_xlabel("obs[2]")
+            axs[3].set_ylabel("obs[3]")
+            axs[3].set_title("obs[3] vs obs[2]")
             axs[3].grid(True)
             axs[3].legend()
+            axs[2].plot(df["action"], df["reward"], 'o', label="action vs obs2", markersize=2, alpha=0.3, color='green')
+            axs[2].set_xlabel("action")
+            axs[2].set_ylabel("reward")
+            axs[2].set_title("action vs reward")
+            axs[2].set_xlim(-10, 10)
+            #axs[3].set_ylim(-0.5, 1)
+            axs[2].grid(True)
+            axs[2].legend()
 
             plt.tight_layout()
             plt.savefig(OUTPUT_PNG)

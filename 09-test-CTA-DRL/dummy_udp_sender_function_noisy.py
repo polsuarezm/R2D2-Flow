@@ -27,7 +27,7 @@ last_obs = 0.0
 # === UDP Setup ===
 sock_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock_recv.bind((RECV_IP, RECV_PORT))
-sock_recv.settimeout(0.5)
+sock_recv.settimeout(DELTA_T*2)
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # === System Functions ===
@@ -37,17 +37,30 @@ def system_step_peak_spikes(
     peak_width=0.05,
     peak_amplitude=1.0,
     noise_level=0.05,
-    peak_probability=0.5
+    peak_probability=0.5,
+    sparsity=0.95  # <- higher means fewer non-zero values when no peak
 ):
     global t
     act = np.array(action[:N_OBS_ARRAY])
-    signal = np.random.normal(0, noise_level, size=N_OBS_ARRAY)
+
+    # Default: zero signal
+    signal = np.zeros(N_OBS_ARRAY, dtype=np.float32)
+
     if np.random.rand() < peak_probability:
+        # Generate Gaussian peak
         x = act - peak_center
         peak = np.exp(-(x ** 2) / (2 * peak_width ** 2)) * peak_amplitude
-        signal += peak
+        noise = np.random.normal(0, noise_level, size=N_OBS_ARRAY)
+        signal = peak + noise
+    else:
+        # Generate sparse random noise burst
+        sparse_noise = np.random.normal(0, noise_level, size=N_OBS_ARRAY)
+        mask = np.random.rand(N_OBS_ARRAY) > sparsity  # e.g., 95% will be zero
+        signal = sparse_noise * mask
+
     time.sleep(DELTA_T)
     return signal.tolist()
+
 
 # === Fallbacks ===
 def fallback_random_obs():
@@ -70,11 +83,13 @@ while True:
 
         action = [float(x) for x in parts[7:7 + N_ACT_ARRAY]]
         last_obs = system_step_peak_spikes(action,
-                                           peak_center=-0.5,
-                                           peak_width=0.2,
-                                           peak_amplitude=1.0,
-                                           noise_level=0.1,
-                                           peak_probability=0.1)
+                                           peak_center=8.0,
+                                           peak_width=1.0,
+                                           peak_amplitude=2.0,
+                                           noise_level=1.0,
+                                           peak_probability=0.05,
+                                           sparsity=0.001
+                                           )
 
         if counter == 1:
             obs[:] = last_obs[0]
