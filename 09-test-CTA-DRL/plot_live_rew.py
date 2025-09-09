@@ -9,7 +9,7 @@ import numpy as np
 # === Configuration ===
 #CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1717/live_rewards.csv"
 #CSV_FILE = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1841/live_rewards.csv"
-with open("input_parameters_v1_20250704_debugip.json", "r") as f:
+with open("input_parameters_v1_20250909.json", "r") as f:
     PARAMS = json.load(f)
 
 CSV_FILE = "./live_rewards_temp.csv"
@@ -42,16 +42,14 @@ while True:
             fig, axs = plt.subplots(4, 1, figsize=(13, 10))  # 1 row, 2 columns
 
             # Plot 1: Reward vs Step
-            axs[0].plot(df["step"], df["reward"], label="Reward", linewidth=1.5, color='black', marker='o', markersize=4, alpha=0.005)
+            axs[0].plot(df["step"], df["reward"], label="Reward", linewidth=1.5, color='black', marker='o', markersize=3, alpha=0.1)
             axs[0].set_xlabel("Step")
             axs[0].set_ylabel("Reward")
             axs[0].set_title("Reward vs Step")
-            axs[0].set_ylim(-2, 2)
+            axs[0].set_ylim(-0.5, 1.25)
             axs[0].grid(True)
             axs[0].legend()
-            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=3, alpha=0.01, color='blue')
-            axs[1].axhline(5, color='black', linestyle='--', linewidth=10, alpha=0.2, label="reward = -0.8")
-            axs[1].axvline(5, color='black', linestyle='--', linewidth=10, alpha=0.2, label="reward = -0.8")
+            axs[1].plot(df["step"], df["action"], 'o', label="action vs step", markersize=3, alpha=0.1, color='blue')
             x_max = df["step"].max()
 
             # Create a boolean mask for evaluation intervals
@@ -71,8 +69,8 @@ while True:
                         label="eval", markersize=3, alpha=0.05, color='black')
 
             # Add static horizontal/vertical lines for context
-            axs[1].axhline(5, color='black', linestyle='--', linewidth=10, alpha=0.2, label="reward = -0.8")
-            axs[1].axvline(5, color='black', linestyle='--', linewidth=10, alpha=0.2)
+            axs[1].axhline(-0.8, color='black', linestyle='--', linewidth=10, alpha=0.1, label="reward = -0.8")
+            #axs[1].axvline(5, color='black', linestyle='--', linewidth=10, alpha=0.2)
 
             # Add eval interval markers
             for x in range(0, x_max + 1, EVAL_FREQ):
@@ -95,15 +93,16 @@ while True:
             axs[2].set_xlabel("action")
             axs[2].set_ylabel("reward")
             axs[2].set_title("action vs reward")
-            axs[2].set_xlim(-10, 10)
+            axs[2].set_xlim(-1.5, 1.5)
             #axs[3].set_ylim(-0.5, 1)
             axs[2].grid(True)
             axs[2].legend()
 
             plt.tight_layout()
             plt.savefig(OUTPUT_PNG, dpi=800)
-            plt.close()
-        #time.sleep(PLOT_INTERVAL_SEC)
+            plt.show()
+        time.sleep(PLOT_INTERVAL_SEC)
+        #plt.close()
     except KeyboardInterrupt:
         print("Stopped.")
         break
