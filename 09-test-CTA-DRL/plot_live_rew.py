@@ -12,7 +12,7 @@ import numpy as np
 with open("input_parameters_v1_20250909.json", "r") as f:
     PARAMS = json.load(f)
 
-CSV_FILE = "./live_rewards_temp.csv"
+CSV_FILE = "./logfile-tanda1-A032.csv"
 
 OUTPUT_PNG = "last_reward_plot_debugeval.png"
 PLOT_INTERVAL_SEC = 1.0
