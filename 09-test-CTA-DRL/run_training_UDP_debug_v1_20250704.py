@@ -28,7 +28,7 @@ class TensorboardLoggingCallback(BaseCallback):
         return True
 
 # === Load configuration ===
-with open("input_parameters_v1_20250704_debugip.json", "r") as f:
+with open("input_parameters_v1_20250909.json", "r") as f:
     PARAMS = json.load(f)
 
 DEBUG = PARAMS.get("DEBUG", False)

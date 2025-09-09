@@ -18,7 +18,7 @@
   "load_model_path": "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1926",
   "crio_ip": "172.22.11.2",
   "hp_ip": "172.22.11.1",
-  "debug_ip": "127.0.0.1",
+  "debug_ip": "127.11.11.22,
   "udp_port_send": 61557,
   "udp_port_recv": 61555,
   "DEBUG": false,
