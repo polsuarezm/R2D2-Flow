@@ -71,10 +71,13 @@ _require-json:
 # - Exactly one of the four mode flags is true
 # - Required keys exist and are sane (ports, sizes, episode_length, etc.)
 # - For online_inference: model_path exists and ends with .zip
+
 .PHONY: check-json
 check-json: _require-json
 	@$(PY) - "$$@" <<'PYCODE'
+
 import json, os, sys, re
+
 path = os.path.join("$(CONF_DIR)", "$(JSON)")
 def fail(msg): print("ERROR:", msg); sys.exit(1)
 # Parse JSON
