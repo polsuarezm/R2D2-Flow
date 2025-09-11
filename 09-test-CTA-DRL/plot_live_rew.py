@@ -1,20 +1,32 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
+from datetime import datetime
 import io
 import os
 import json
 import numpy as np
+import argparse
+
+parser = argparse.ArgumentParser()
+#parser.add_argument("--case_name", required=True)
+parser.add_argument("--json_file", required=True)
+parser.add_argument("--csv_file", required=True)
+
+args = parser.parse_args()
+
+#print(f"case: {args.case_name}")
 
 # === Configuration ===
 #CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1717/live_rewards.csv"
 #CSV_FILE = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1841/live_rewards.csv"
-with open("input_parameters_v1_20250909.json", "r") as f:
+with open(f"conf/{args.json_file}", "r") as f:
     PARAMS = json.load(f)
 
-CSV_FILE = "./logfile-tanda1-A032.csv"
-
-OUTPUT_PNG = "last_reward_plot_debugeval.png"
+#CSV_FILE = f"./logs_v1_20250910/logfile-{args.case_name}.csv"
+#CASE_NAME = PARAMS.get("args.case_name", "debug")
+CSV_FILE = f"./csv_log/{args.csv_file}"
+OUTPUT_PNG = "./figs/last_reward_plot_debug.png"
 PLOT_INTERVAL_SEC = 1.0
 EVAL_FREQ=PARAMS.get("eval_freq", 5000)
 EPS_LENGTH = PARAMS.get("episode_length", 100)
@@ -102,6 +114,7 @@ while True:
             plt.savefig(OUTPUT_PNG, dpi=800)
             plt.show()
         time.sleep(PLOT_INTERVAL_SEC)
+       # plt.close()
         #plt.close()
     except KeyboardInterrupt:
         print("Stopped.")
