@@ -30,6 +30,8 @@ JSON ?=
 CONF_DIR := conf
 RUN := run_training_UDP_debug_v1_20250911.py
 
+import json, sys, os
+
 # Prefer local venv Python if present; else fall back to system 'python'
 PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 
@@ -94,7 +96,7 @@ _require-json:
 .PHONY: check-mode
 check-mode: _require-json
 > $(PY) - <<'PYCODE'
-import json, sys, os
+
 path = os.path.join("$(CONF_DIR)", "$(JSON)")
 data = json.load(open(path))
 flags = {
