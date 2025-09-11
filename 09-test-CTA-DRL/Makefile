@@ -67,25 +67,17 @@ _require-json:
 		exit 1; \
 	fi
 
-# Strong JSON validation:
-# - Exactly one of the four mode flags is true
-# - Required keys exist and are sane (ports, sizes, episode_length, etc.)
-# - For online_inference: model_path exists and ends with .zip
-
+# Strong JSON validation
 .PHONY: check-json
 check-json: _require-json
 	@$(PY) - "$$@" <<'PYCODE'
-
-import json, os, sys, re
-
+import json, os, sys
 path = os.path.join("$(CONF_DIR)", "$(JSON)")
 def fail(msg): print("ERROR:", msg); sys.exit(1)
-# Parse JSON
 try:
 	d = json.load(open(path, "r"))
 except Exception as e:
 	fail(f"cannot parse JSON: {e}")
-# Mode flags
 flags = {
 	"online_training": bool(d.get("online_training", False)),
 	"online_inference": bool(d.get("online_inference", False)),
@@ -96,23 +88,19 @@ true_flags = [k for k,v in flags.items() if v]
 if len(true_flags) != 1:
 	fail(f"exactly one mode flag must be true; got {flags}")
 mode = true_flags[0]
-# Required keys
 required = [
 	"message_type","size_obs_array_per_UDP","total_descarte","total_descarte_used",
 	"size_actuator_array","udp_port_send","udp_port_recv","action_min","action_max",
 	"episode_length","total_episodes","log_dir_template","crio_ip","hp_ip","debug_ip"
 ]
 for k in required:
-	if k not in d:
-		fail(f"missing key '{k}'")
-# Types / ranges
+	if k not in d: fail(f"missing key '{k}'")
 def posint(k, allow_zero=False):
-	if not isinstance(d[k], int):
-		fail(f"'{k}' must be int")
+	if not isinstance(d[k], int): fail(f"'{k}' must be int")
 	if allow_zero:
-		if d[k] < 0: fail(f"'{k}' must be >= 0")
+		if d[k] < 0: fail(f"'{k}' must be >=0")
 	else:
-		if d[k] <= 0: fail(f"'{k}' must be > 0")
+		if d[k] <= 0: fail(f"'{k}' must be >0")
 for k in ["size_obs_array_per_UDP","size_actuator_array","episode_length","total_episodes"]:
 	posint(k)
 posint("total_descarte", allow_zero=True)
@@ -122,20 +110,16 @@ if d["total_descarte_used"] > d["total_descarte"]:
 for k in ["udp_port_send","udp_port_recv"]:
 	posint(k)
 	if not (1 <= d[k] <= 65535): fail(f"'{k}' must be in 1..65535")
-# Online inference must have a valid model zip
 if flags["online_inference"]:
 	mp = str(d.get("model_path","")).strip()
-	if not mp:
-		fail("online_inference requires 'model_path'")
-	if not mp.endswith(".zip"):
-		fail("'model_path' must point to an SB3 .zip file")
-	if not os.path.exists(mp):
-		fail(f"'model_path' does not exist: {mp}")
+	if not mp: fail("online_inference requires 'model_path'")
+	if not mp.endswith(".zip"): fail("'model_path' must point to an SB3 .zip file")
+	if not os.path.exists(mp): fail(f"'model_path' does not exist: {mp}")
 print(f"OK: JSON validated. Mode = {mode}")
 PYCODE
 
 # -------------------------
-# Run modes (JSON controls the actual mode)
+# Run modes
 # -------------------------
 .PHONY: train-online
 train-online: check-json
@@ -174,7 +158,7 @@ clean-tmp:
 	@echo "Removed ./csv_log/live_rewards_temp.csv"
 
 # -------------------------
-# Plotting helpers
+# Plotting
 # -------------------------
 .PHONY: plot
 plot: check-json
@@ -184,11 +168,11 @@ plot: check-json
 .PHONY: plot-file
 plot-file: check-json
 	@mkdir -p figs
-	@if [[ -z "$(CSV)" ]]; then echo "Pass CSV=<file> (must exist in ./csv_log/)"; exit 1; fi
+	@if [[ -z "$(CSV)" ]]; then echo "Pass CSV=<file>"; exit 1; fi
 	$(PY) plot_live.py --json_file $(JSON) --csv_file $(CSV)
 
 # -------------------------
-# Local debugging simulators
+# Local simulators
 # -------------------------
 .PHONY: sim-online_UDP
 sim-online_UDP: check-json
@@ -201,18 +185,18 @@ sim-offload_UDP: check-json
 	$(PY) simulator_local_offloading.py --json_file $(JSON)
 
 # -------------------------
-# One-command debug runners (agent + simulator)
+# Debug runners
 # -------------------------
 .PHONY: debug-local-online
 debug-local-online: check-json
-	@echo ">>> Running agent + ONLINE simulator (Ctrl-C to stop both)"
+	@echo ">>> Running agent + ONLINE simulator"
 	( $(PY) $(RUN) --json_file $(JSON) ) & \
 	( $(PY) simulator_local_online.py --json_file $(JSON) ); \
 	wait
 
 .PHONY: debug-local-offloading
 debug-local-offloading: check-json
-	@echo ">>> Running agent + OFFLOADING simulator (Ctrl-C to stop both)"
+	@echo ">>> Running agent + OFFLOADING simulator"
 	( $(PY) $(RUN) --json_file $(JSON) ) & \
 	( $(PY) simulator_local_offloading.py --json_file $(JSON) ); \
 	wait
