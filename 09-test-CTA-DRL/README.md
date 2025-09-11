@@ -333,6 +333,4 @@ Inside `LOG_DIR = log_dir_template.format(YYYYMMDD-HHMM)`:
   * Device sends `state_csv;action_csv;reward` … `<END>`
   * Python logs `external_training.csv`, sends weight string each episode
 
----
 
-If you want, I’ll add a minimal `Makefile` with `make train`, `make infer`, and `make offload` targets and a small sample JSON in `conf/` to get you 1-command runs.
