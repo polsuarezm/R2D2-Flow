@@ -1,8 +1,3 @@
-Perfect 🚀 — here’s a **full README.md** tailored to your updated codebase with the **four mode flags**, the new **Makefile**, and your plotting workflow.
-It’s structured so that someone new to the repo can follow step by step.
-
----
-
 # DRL-EXPERIMENTAL KV260
 
 UDP-based reinforcement learning framework for PPO with support for:
