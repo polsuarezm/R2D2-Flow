@@ -12,11 +12,11 @@
   "reward_type": "CTA",
 
   "online_training": false,
-  "online_inference": true,
-  "offloading_training": false,
+  "online_inference": false,
+  "offloading_training": true,
   "offload_inference": false,
 
-  "evaluation": true,
+  "evaluation": false,
 
   "eval_freq": 400,
   "n_eval_episodes": 2,
@@ -33,7 +33,7 @@
   "udp_port_recv": 61555,
 
   "DEBUG": false,
-  "debugging_IP": false,
+  "debugging_IP": true,
 
   "action_min": -1,
   "action_max": 1,

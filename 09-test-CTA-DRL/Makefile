@@ -134,13 +134,24 @@ plot-file: _require-json
 # -------------------------
 # Local debugging simulator
 # -------------------------
-.PHONY: sim
-sim: _require-json
-	@echo ">>> Starting local UDP simulator with $(JSON)"
-	$(PY) simulator_local.py --json_file $(JSON)
+.PHONY: sim-online_UDP
+sim-online_UDP: _require-json
+	@echo ">>> Starting local UDP online simulator with $(JSON)"
+	$(PY) simulator_local_online.py --json_file $(JSON)
 
-.PHONY: debug-local
-debug-local: _require-json
+.PHONY: sim-offload_UDP
+sim-offload_UDP: _require-json
+	@echo ">>> Starting local UDP offloading simulator with $(JSON)"
+	$(PY) simulator_local_offloading.py --json_file $(JSON)
+
+.PHONY: debug-local-online
+debug-local-online: _require-json
 	@echo ">>> Running agent and local UDP simulator together"
 	( $(PY) $(RUN) --json_file $(JSON) ) & \
-	( $(PY) simulator_local.py --json_file $(JSON) )
+	( $(PY) simulator_local_online.py --json_file $(JSON) )
+
+.PHONY: debug-local-offloading
+debug-local-offloading: _require-json
+	@echo ">>> Running agent and local UDP simulator together"
+	( $(PY) $(RUN) --json_file $(JSON) ) & \
+        ( $(PY) simulator_local_offloading.py --json_file
