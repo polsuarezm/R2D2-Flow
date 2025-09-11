@@ -1,59 +1,46 @@
-Here’s a clean, copy-pasteable **README** for your repo. It explains setup, how to launch each mode, the JSON flags, and where every log/file lands.
+Perfect 🚀 — here’s a **full README.md** tailored to your updated codebase with the **four mode flags**, the new **Makefile**, and your plotting workflow.
+It’s structured so that someone new to the repo can follow step by step.
 
 ---
 
-# DRL-EXPERIMENTAL KV260 — UDP RL Framework
+# DRL-EXPERIMENTAL KV260
 
-This repo runs a PPO-based RL loop over UDP to a CRIO/KV260 system.
-It supports three execution modes:
+UDP-based reinforcement learning framework for PPO with support for:
 
-1. **Training mode (SB3 PPO + EvalCallback)** – Python computes actions online over UDP.
-2. **Inference-only mode** – load a saved PPO and act online; no training.
-3. **Offloading-weights mode** – the device (CRIO) runs the policy; Python only receives full trajectories, updates the actor, and sends updated **weights** back via UDP (same message format you used before).
+1. **Online Training** — PPO runs in Python, sends actions via UDP, receives observations, and learns.
+2. **Online Inference** — PPO runs in Python, sends actions via UDP, receives observations, no learning.
+3. **Offloading Training** — CRIO/KV260 executes the policy; Python receives full trajectories, trains the actor, and sends updated weights back over UDP.
+4. **Offload Inference** — CRIO/KV260 executes the policy; Python only sends initial weights and logs trajectories (no update).
 
 ---
 
-## 1) Requirements
+## 1. Environment Setup
 
-* **Python** 3.9–3.11 (recommended)
-* **pip** and a virtualenv/conda recommended
-
-### Python packages
+Clone the repo and create a virtual environment:
 
 ```bash
-pip install \
-  stable-baselines3==2.3.2 \
-  gymnasium==0.29.1 \
-  numpy \
-  pandas \
-  matplotlib \
-  torch --index-url https://download.pytorch.org/whl/cpu
+git clone <your_repo_url>
+cd <your_repo>
+
+make venv          # create .venv (Python 3.9+ recommended)
+source .venv/bin/activate
+make install       # install dependencies
 ```
 
-> If you have a GPU PyTorch, install the proper CUDA wheel instead of the CPU one.
+Dependencies installed:
+
+* [stable-baselines3==2.3.2](https://github.com/DLR-RM/stable-baselines3)
+* [gymnasium==0.29.1](https://github.com/Farama-Foundation/Gymnasium)
+* numpy, pandas, matplotlib
+* PyTorch (CPU wheel; replace with CUDA wheel if you want GPU)
 
 ---
 
-## 2) Files & Structure
+## 2. Configuration (JSON)
 
-* `run.py` – your main script (the big one you just updated).
-* `conf/<case>.json` – configuration file(s) (example below).
-* **Generated at runtime (per run)** inside a fresh `LOG_DIR`:
+All runs are configured by a JSON file inside `conf/`.
 
-  * `env_monitor.*.csv` – SB3 Monitor logs (episode stats).
-  * `live_rewards.csv` – streaming log of step-wise reward/action/timestamp/4 last obs (always).
-  * `./csv_log/live_rewards_temp.csv` – rolling temp copy for live plotting (overwritten each run).
-  * `reward_vs_steps.png` – quick plot of episode rewards vs. time (if monitor log exists).
-  * `best_model.zip` / `evaluations.npz` – from `EvalCallback` when training.
-  * `model_PPO_<HHMMSS>.zip` – periodic model snapshots saved during training.
-  * `external_training.csv` – only in **offloading-weights mode**; per-episode summary.
-  * `external_actor.pt` – only in offloading mode; PyTorch actor checkpoint.
-
----
-
-## 3) JSON Configuration (key flags)
-
-Minimal example (adapt to your network & case):
+### Example: `conf/A034.json`
 
 ```json
 {
@@ -69,18 +56,19 @@ Minimal example (adapt to your network & case):
   "scalar_reward": 0.02,
   "reward_type": "CTA",
 
-  "training": false,
-  "evaluation": true,
+  "online_training": false,
+  "online_inference": true,
+  "offloading_training": false,
+  "offload_inference": false,
+
+  "evaluation": false,
 
   "eval_freq": 400,
   "n_eval_episodes": 2,
   "episode_length": 50,
   "total_episodes": 10000,
 
-  "create_new_model": false,
-  "load_model_path": true,
   "model_path": "/path/to/model_PPO_xxx.zip",
-
   "log_dir_template": "logs_v1_YYYYMMDD/model_PPO_{}",
 
   "crio_ip": "172.22.11.2",
@@ -112,142 +100,149 @@ Minimal example (adapt to your network & case):
   "inference_deterministic": true,
   "inference_print_every": 10,
 
-  "offloading_weights_mode": false,
   "trajectory_timeout": 5.0,
   "epochs_per_episode": 5,
   "identifier_str": "Control_id_x"
 }
 ```
 
-### Semantics of key flags
+### Mode flags
 
-* **Mode selection**
+Set **exactly one** of the following to `true`:
 
-  * **Training** (SB3 PPO): happens when `offloading_weights_mode=false` **and** NOT in inference-only (see below).
-  * **Inference-only**: when `create_new_model=false` **and** (`load_model_path==true` or `load_model_path` is a string path) — the script loads `model_path` and only predicts actions.
-  * **Offloading-weights mode**: when `offloading_weights_mode=true` — CRIO executes the policy; Python only trains on received trajectories and sends weights back.
+* `"online_training"`
+* `"online_inference"`
+* `"offloading_training"`
+* `"offload_inference"`
 
-* **`evaluation`** (`EVAL_MODE`): affects only `env.reset()` behavior:
-
-  * `true` → returns a dummy obs of ones at reset (no UDP read on reset). Useful for dry runs.
-  * `false` → normal UDP receive on reset.
-
-* **Networking**
-
-  * Listener binds to `hp_ip:udp_port_recv`.
-  * Actions are sent to `crio_ip:udp_port_send`.
-  * Set `"debugging_IP": true` to switch both to `debug_ip`.
-
-* **Dimensions**
-
-  * Observation length used by env = `N_OBS_ARRAY = size_obs_array_per_UDP * (total_descarte_used + 1)`
-  * Action dimension = `size_actuator_array`.
+The `make check-mode JSON=...` command ensures your JSON is valid.
 
 ---
 
-## 4) Running
+## 3. Running
 
-Make sure your venv is active and the UDP peer is reachable.
+All runs go through `run.py`.
+Use the **Makefile** to simplify commands.
+
+### Online Training (SB3 PPO in Python)
 
 ```bash
-python run.py --json_file A034.json
+make train-online JSON=A034.json
 ```
 
-### a) Training mode (SB3 PPO)
+### Online Inference (PPO acts, no training)
 
-Set in JSON:
-
-```json
-"offloading_weights_mode": false,
-"create_new_model": true,
-"load_model_path": false
+```bash
+make infer-online JSON=A034.json
 ```
 
-or simply omit `model_path` and keep `create_new_model: true`.
+### Offloading Training (CRIO executes, Python trains & resends weights)
 
-* The script will:
-
-  * build PPO,
-  * learn in chunks of `n_steps`,
-  * every `eval_freq` steps run `n_eval_episodes` evaluations and save `best_model.zip`,
-  * periodically save `model_PPO_<HHMMSS>.zip`.
-
-### b) Inference-only mode
-
-Set in JSON:
-
-```json
-"offloading_weights_mode": false,
-"create_new_model": false,
-"load_model_path": true,
-"model_path": "/path/to/model_PPO_xxx.zip",
-"inference_episodes": 1000
+```bash
+make train-offload JSON=A034.json
 ```
 
-* Loads the PPO and runs `inference_episodes` in a loop, sending actions online over UDP.
+### Offload Inference (CRIO executes, Python just relays weights)
 
-### c) Offloading-weights mode (CRIO drives the policy)
-
-Set in JSON:
-
-```json
-"offloading_weights_mode": true
+```bash
+make infer-offload JSON=A034.json
 ```
 
-* Python:
+### Validate JSON mode
 
-  * Sends initial weights (single UDP message, **same format** as your legacy Keras script).
-  * Waits for a full trajectory stream (packets `state_csv;action_csv;reward`; terminated by `<END>`).
-  * Trains a small PyTorch actor using advantage-weighted MSE.
-  * Saves and re-sends updated weights (same single-message format).
-  * Logs to `external_training.csv` and `external_actor.pt`.
+```bash
+make check-mode JSON=A034.json
+```
 
 ---
 
-## 5) UDP Message Protocols
+## 4. Logs & Outputs
 
-### 5.1 Online actions (training & inference modes)
+Each run creates a `LOG_DIR` based on the template in JSON:
 
-* **To CRIO** each `step()`:
+```
+logs_v1_YYYYMMDD/model_PPO_HHMM
+```
 
-  * If `message_type == 1`:
+### Files produced
 
-    ```
-    "<timestamp>;1;1;1;1;1;1;A0;A1;...;Ak"
-    ```
-  * Else:
+| File                                | When              | Meaning                                                                   |
+| ----------------------------------- | ----------------- | ------------------------------------------------------------------------- |
+| `live_rewards.csv`                  | all online modes  | Step log: `step,reward,action,timestamp,obs[-4],obs[-3],obs[-2],obs[-1]`. |
+| `csv_log/live_rewards_temp.csv`     | all modes         | Rolling copy for live plotting.                                           |
+| `env_monitor.*.csv`                 | online training   | SB3 Monitor log of episodes.                                              |
+| `best_model.zip`, `evaluations.npz` | online training   | From EvalCallback (best checkpoint + eval history).                       |
+| `model_PPO_<HHMMSS>.zip`            | online training   | Snapshots saved after each learning chunk.                                |
+| `reward_vs_steps.png`               | if Monitor exists | Quick matplotlib plot of reward vs. timesteps.                            |
+| `external_training.csv`             | offloading modes  | Per-episode log: `episode,steps,return,loss`.                             |
+| `external_actor.pt`                 | offloading modes  | PyTorch checkpoint of offloaded actor.                                    |
 
-    ```
-    "<timestamp>;A0A1...Ak"   # compact form; you used this earlier
-    ```
+### Utilities
 
-* **From CRIO** (observations):
-  For each `reset/step`, the env collects `(total_descarte + 1)` UDP packets.
-  Each packet:
+```bash
+make show-latest-log    # print newest logs* directory
+make tail-live          # follow ./csv_log/live_rewards_temp.csv
+make clean-tmp          # remove rolling temp CSV
+```
+
+---
+
+## 5. Live Plotting
+
+Use the provided `plot_live.py` script.
+
+### Continuous live plot
+
+```bash
+make plot JSON=A034.json
+```
+
+Watches `./csv_log/live_rewards_temp.csv` and updates every second.
+Saves a PNG in `./figs/last_reward_plot_debug.png`.
+
+### Plot a saved CSV
+
+```bash
+make plot-file JSON=A034.json CSV=live_rewards.csv
+```
+
+Plots `./csv_log/live_rewards.csv`.
+
+### Generated figures
+
+* Reward vs Step
+* Action vs Step (training vs eval intervals)
+* Action vs Reward
+* obs\[3] vs obs\[2]
+
+---
+
+## 6. UDP Protocols
+
+### Online modes (Python acts)
+
+* **Action sent (type=1):**
 
   ```
-  "<timestamp>;x1;x2;x3;x4"
+  <timestamp>;1;1;1;1;1;1;A0;A1;...;Ak
+  ```
+* **Observation received:**
+
+  ```
+  <timestamp>;x1;x2;x3;x4
   ```
 
-  We keep the last `size_obs_array_per_UDP` (here 4) and pack them into the observation buffer.
-  Reward is computed locally from the final obs chunk depending on `"reward_type"`:
+  repeated `TOTAL_DESCARTE+1` times → concatenated into one obs vector.
 
-  * `"CTA"` → `reward = 1 - obs[-2] / scalar_reward`
-  * else → `reward = obs[-1]`
+### Offloading modes (CRIO acts)
 
-### 5.2 Offloading weights (offloading\_weights\_mode)
-
-* **Weights → CRIO** (single datagram):
+* **Weights (Python → CRIO):**
 
   ```
   # arch; weights; identifier
-  OBS_DIM_H1_H2_..._Hn_ACTS; w1; w2; ...; wN; IDENTIFIER_STR
+  OBS_H1_H2_..._ACTS;w1;w2;...;wN;IDENTIFIER
   ```
-
-  * Weight order: for each Linear layer in build order → **weights (row-major) then bias**.
-  * Matches your Keras string convention.
-
-* **Trajectory → Python** (multiple datagrams, then terminator):
+* **Trajectory (CRIO → Python):**
 
   ```
   s1,s2,...;a1,a2,...;r
@@ -255,82 +250,15 @@ Set in JSON:
   <END>
   ```
 
-  * Expected sizes: `len(state)==obs_dim`, `len(action)==n_actions`.
+---
+
+## 7. Quick Tips
+
+* Always run `make check-mode JSON=...` before launching — ensures exactly one mode is active.
+* For dummy tests (no UDP), set `"evaluation": true` → env.reset() returns ones instead of waiting for UDP.
+* `plot_live.py` is safe against partial writes (reads CSV line-buffered).
+* If weight strings get too large for a single datagram, chunking will be needed (current version assumes fits in one UDP packet).
 
 ---
 
-## 6) Outputs & Where to Find Them
-
-Inside `LOG_DIR = log_dir_template.format(YYYYMMDD-HHMM)`:
-
-* `live_rewards.csv`
-  Columns: `global_step,reward,action0,timestamp,obs[-4],obs[-3],obs[-2],obs[-1]`
-  Written **every step** (all modes that use the Gym env).
-
-* `./csv_log/live_rewards_temp.csv`
-  Same columns as above; overwritten per run (handy for dashboards).
-
-* `env_monitor.*.csv` (SB3 Monitor)
-  Episode summaries while training (steps, reward, length). SB3 writes the header row comment (skiprows=1).
-
-* `best_model.zip` & `evaluations.npz`
-  From `EvalCallback` in **training mode**.
-
-* `model_PPO_<HHMMSS>.zip`
-  Periodic snapshots saved each `learn()` cycle.
-
-* `reward_vs_steps.png`
-  Quick scatter plot of episode reward vs elapsed timesteps (if a monitor file exists).
-
-* `external_training.csv` (**offloading mode only**)
-  CSV rows: `episode,steps,return,loss`
-
-* `external_actor.pt` (**offloading mode only**)
-  PyTorch checkpoint for the external actor.
-
----
-
-## 7) Tips & Troubleshooting
-
-* **Dummy obs vs. real UDP on reset**:
-  `"evaluation": true` → `reset()` returns `ones(...)`.
-  Set it to `false` for real UDP receive at reset.
-
-* **VecEnv vs. raw env loops**:
-  In inference we unwrap: `base_env = env.envs[0]` to use Gymnasium API:
-  `obs, info = base_env.reset()` → `obs, reward, terminated, truncated, info = base_env.step(action)`.
-
-* **Model path**:
-  You can give either `".../model.zip"` or base path without `.zip`; the script handles both.
-
-* **UDP backlog**:
-  The env flushes the receive socket before each blocking read to avoid stale packets.
-
-* **Ports and IPs**:
-  Make sure firewall allows UDP both ways for `udp_port_send`/`udp_port_recv`.
-  If running locally, set `"debugging_IP": true` to switch to `debug_ip` (127.0.0.1).
-
----
-
-## 8) Repro Checklists
-
-* **Training (online actions)**
-
-  * `offloading_weights_mode=false`
-  * `create_new_model=true` (or resume)
-  * Proper `hp_ip`, `crio_ip`, ports open
-  * Observe `best_model.zip`, periodic `model_PPO_*.zip`, `live_rewards.csv`
-
-* **Inference**
-
-  * `offloading_weights_mode=false`
-  * `create_new_model=false`, `load_model_path=true`, `model_path="...zip"`
-  * Watch `live_rewards.csv` and console prints
-
-* **Offloading**
-
-  * `offloading_weights_mode=true`
-  * Device sends `state_csv;action_csv;reward` … `<END>`
-  * Python logs `external_training.csv`, sends weight string each episode
-
-
+Would you like me to also include a **mode cheatsheet table** at the top of the README (so it’s immediately clear which flag combination to set for each case), or keep it in section 2 only?
