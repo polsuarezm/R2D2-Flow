@@ -35,7 +35,7 @@ Dependencies installed:
 
 All runs are configured by a JSON file inside `conf/`.
 
-### Example: `conf/A034.json`
+### Example: `conf/input_parameters_20250911.json`
 
 ```json
 {
@@ -122,31 +122,31 @@ Use the **Makefile** to simplify commands.
 ### Online Training (SB3 PPO in Python)
 
 ```bash
-make train-online JSON=A034.json
+make train-online JSON=input_parameters_20250911.json
 ```
 
 ### Online Inference (PPO acts, no training)
 
 ```bash
-make infer-online JSON=A034.json
+make infer-online JSON=input_parameters_20250911.json
 ```
 
 ### Offloading Training (CRIO executes, Python trains & resends weights)
 
 ```bash
-make train-offload JSON=A034.json
+make train-offload JSON=input_parameters_20250911.json
 ```
 
 ### Offload Inference (CRIO executes, Python just relays weights)
 
 ```bash
-make infer-offload JSON=A034.json
+make infer-offload JSON=input_parameters_20250911.json
 ```
 
 ### Validate JSON mode
 
 ```bash
-make check-mode JSON=A034.json
+make check-mode JSON=input_parameters_20250911.json
 ```
 
 ---
@@ -184,12 +184,12 @@ make clean-tmp          # remove rolling temp CSV
 
 ## 5. Live Plotting
 
-Use the provided `plot_live.py` script.
+Use the provided `plot_live_experiment.py` script.
 
 ### Continuous live plot
 
 ```bash
-make plot JSON=A034.json
+make plot JSON=input_parameters_20250911.json
 ```
 
 Watches `./csv_log/live_rewards_temp.csv` and updates every second.
@@ -198,7 +198,7 @@ Saves a PNG in `./figs/last_reward_plot_debug.png`.
 ### Plot a saved CSV
 
 ```bash
-make plot-file JSON=A034.json CSV=live_rewards.csv
+make plot-file JSON=input_parameters_20250911.json CSV=live_rewards.csv
 ```
 
 Plots `./csv_log/live_rewards.csv`.
@@ -254,6 +254,3 @@ Plots `./csv_log/live_rewards.csv`.
 * `plot_live.py` is safe against partial writes (reads CSV line-buffered).
 * If weight strings get too large for a single datagram, chunking will be needed (current version assumes fits in one UDP packet).
 
----
-
-Would you like me to also include a **mode cheatsheet table** at the top of the README (so it’s immediately clear which flag combination to set for each case), or keep it in section 2 only?
