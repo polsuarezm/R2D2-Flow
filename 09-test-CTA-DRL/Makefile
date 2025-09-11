@@ -23,7 +23,7 @@
 SHELL := /bin/bash
 JSON ?=
 CONF_DIR := conf
-RUN := run.py
+RUN := run_training_UDP_debug_v1_20250911.py
 
 # Prefer local venv Python if present; else fall back to system 'python'
 PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
@@ -87,6 +87,7 @@ _require-json:
 .PHONY: check-mode
 check-mode: _require-json
 	@$(PY) - <<'PYCODE'
+
 import json, sys, os
 path = os.path.join("$(CONF_DIR)", "$(JSON)")
 data = json.load(open(path))
@@ -155,4 +156,23 @@ plot-file: _require-json
 	@mkdir -p figs
 	@if [[ -z "$(CSV)" ]]; then echo "Pass CSV=<file> (must exist in ./csv_log/)"; exit 1; fi
 	$(PY) plot_live.py --json_file $(JSON) --csv_file $(CSV)
+# -------------------------
+# Local debugging simulator
+# -------------------------
+
+# Run the UDP simulator (loopback testbed).
+# Usage: make sim JSON=A034.json
+.PHONY: sim
+sim: _require-json
+	@echo ">>> Starting local UDP simulator with $(JSON)"
+	$(PY) simulator_local.py --json_file $(JSON)
+
+# Run both agent + simulator in parallel for quick local workflow.
+# Usage: make debug-local JSON=A034.json
+.PHONY: debug-local
+debug-local: _require-json
+	@echo ">>> Running agent and local UDP simulator together"
+	# Using two subshells in parallel; stop with Ctrl-C
+	( $(PY) $(RUN) --json_file $(JSON) ) & \
+	( $(PY) simulator_local.py --json_file $(JSON) )
 
