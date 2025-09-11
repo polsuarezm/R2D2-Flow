@@ -1,11 +1,11 @@
+# === DRL-EXPERIMENTAL KV260
 # === Full Training/Inference Script with Enhanced TensorBoard Logging, EvalCallback,
-# === and CRIO Offloading-Weights Mode (trajectory-in / weights-out over UDP) ===
+# === and CRIO Offloading Modes (trajectory-in / weights-out over UDP) ===
 
 import socket, json, os, glob
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
-import time
 import gymnasium as gym
 from gymnasium import spaces
 import pandas as pd
@@ -16,16 +16,18 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, CallbackList
 
-# Torch (used for offloading_weights_mode training)
+# Torch (used for offloading modes)
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 
 # ----------------- CLI -----------------
 parser = argparse.ArgumentParser()
 parser.add_argument("--json_file", required=True)
 args = parser.parse_args()
 print(f"running case: {args.json_file}")
+
 
 # ----------------- TB Callback -----------------
 class TensorboardLoggingCallback(BaseCallback):
@@ -39,30 +41,35 @@ class TensorboardLoggingCallback(BaseCallback):
         self.logger.record("custom/step_count", base_env.step_count)
         return True
 
+
 # ----------------- Load configuration -----------------
 with open(f"./conf/{args.json_file}", "r") as f:
     PARAMS = json.load(f)
 
-DEBUG = PARAMS.get("DEBUG", False)
-DEBUG_IP = PARAMS.get("debugging_IP", False)
+DEBUG      = PARAMS.get("DEBUG", False)
+DEBUG_IP   = PARAMS.get("debugging_IP", False)
+ALGO_TYPE  = PARAMS.get("algo_type", "PPO").upper()
 
-# NOTE: In this script, EVAL_MODE only changes reset() behavior (dummy obs vs UDP)
-EVAL_MODE = PARAMS.get("evaluation", False)
+# NEW: Four explicit mode flags (mutually exclusive)
+ONLINE_TRAIN   = bool(PARAMS.get("online_training", False))
+ONLINE_INFER   = bool(PARAMS.get("online_inference", False))
+OFFLOAD_TRAIN  = bool(PARAMS.get("offloading_training", False))
+OFFLOAD_INFER  = bool(PARAMS.get("offload_inference", False))
 
-CREATE_NEW   = PARAMS.get("create_new_model", True)
-ALGO_TYPE    = PARAMS.get("algo_type", "PPO").upper()
+# Optional: legacy evaluation flag only affects env.reset() (dummy ones() vs UDP)
+EVAL_MODE = bool(PARAMS.get("evaluation", False))  # does NOT pick mode
 
-# ---- Robust handling of load flag + model path ----
-_load_field = PARAMS.get("load_model_path", False)  # may be bool or legacy string path
-if isinstance(_load_field, bool):
-    LOAD_FLAG = _load_field
-    _mp = PARAMS.get("model_path", "")
-else:
-    LOAD_FLAG = bool(_load_field)
-    _mp = str(_load_field)
+# Guard: exactly one mode must be true
+true_flags = [ONLINE_TRAIN, ONLINE_INFER, OFFLOAD_TRAIN, OFFLOAD_INFER]
+if sum(true_flags) != 1:
+    raise ValueError(
+        "Exactly one of the following flags must be true: "
+        "online_training, online_inference, offloading_training, offload_inference."
+    )
 
-MODEL_PATH = _mp[:-4] if _mp.endswith(".zip") else _mp
-INFERENCE_ONLY = (LOAD_FLAG is True) and (CREATE_NEW is False)
+# Model path (used for ONLINE_INFER; can be '.../model.zip' or base path without .zip)
+_model_path = str(PARAMS.get("model_path", "")).strip()
+MODEL_ZIP_PATH = _model_path if _model_path.endswith(".zip") else (_model_path + ".zip" if _model_path else "")
 
 LOG_DIR = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M"))
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -83,16 +90,16 @@ N_OBS_ARRAY = N_OBS_ARRAY_PER_UDP * (TOTAL_DESCARTE_USED + 1)
 
 REWARD_TYPE = PARAMS.get("reward_type", "").upper()
 
-# Inference controls
+# Inference controls (for ONLINE_INFER)
 INFER_EPISODES       = int(PARAMS.get("inference_episodes", 1))
 INFER_DETERMINISTIC  = bool(PARAMS.get("inference_deterministic", True))
 INFER_PRINT_EVERY    = int(PARAMS.get("inference_print_every", 10))
 
-# Offloading-weights mode (CRIO executes policy; Python trains on trajectories)
-OFFLOAD_MODE      = bool(PARAMS.get("offloading_weights_mode", False))
+# Offloading controls
 TRAJ_TIMEOUT_S    = float(PARAMS.get("trajectory_timeout", 5.0))
 EPOCHS_PER_EP     = int(PARAMS.get("epochs_per_episode", 5))
 IDENTIFIER_STR    = PARAMS.get("identifier_str", "Control_id_x")
+
 
 # ----------------- UDP setup -----------------
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -105,31 +112,28 @@ send_ip = PARAMS["debug_ip"] if DEBUG_IP else PARAMS["crio_ip"]
 sock_recv.bind((recv_ip, PARAMS["udp_port_recv"]))
 print(f"Listening on {recv_ip}:{PARAMS['udp_port_recv']}")
 
-# ----------------- Helpers for Offload Mode -----------------
+
+# ----------------- Helpers for Offload Modes -----------------
 def serialize_weights_like_keras_torch(actor: nn.Module, arch_header: str, identifier: str) -> str:
     """
-    Reproduce the same message format you've used before:
+    EXACT legacy message format:
       "# arch; weights; identifier\\n"
       "{arch_header};w1;w2;...;wN;{identifier}"
-    Flatten order: for each Linear -> weight (row-major), then bias; in construction order.
-    Returns the **string** (not bytes). Sent as a single UDP datagram, as requested.
+    Order: for each nn.Linear in build order -> weights (row-major), then bias.
+    Returns the string (send as single UDP datagram).
     """
     flat_vals = []
     with torch.no_grad():
         for m in actor.modules():
             if isinstance(m, nn.Linear):
-                # weight then bias to match Keras get_weights() order
                 flat_vals.append(m.weight.contiguous().view(-1).cpu().numpy())
                 if m.bias is not None:
                     flat_vals.append(m.bias.contiguous().view(-1).cpu().numpy())
-    if len(flat_vals) == 0:
-        flat = np.array([], dtype=np.float32)
-    else:
-        flat = np.concatenate(flat_vals)
-
+    flat = np.concatenate(flat_vals) if flat_vals else np.array([], dtype=np.float32)
     header = "# arch; weights; identifier\n"
     body   = arch_header + ";" + ";".join(f"{v:.5E}" for v in flat) + ";" + identifier
     return header + body
+
 
 def recv_trajectory(sock_recv, episode_len, obs_dim, n_actions, timeout_s=5.0):
     """
@@ -154,7 +158,6 @@ def recv_trajectory(sock_recv, episode_len, obs_dim, n_actions, timeout_s=5.0):
             at = np.array([float(x) for x in at_str.split(",")], dtype=np.float32)
             rt = float(rt_str)
             if st.size != obs_dim or at.size != n_actions:
-                # skip malformed lines
                 continue
             X[t] = st
             Y[t] = at
@@ -165,6 +168,7 @@ def recv_trajectory(sock_recv, episode_len, obs_dim, n_actions, timeout_s=5.0):
     finally:
         sock_recv.settimeout(None)
     return X[:t], Y[:t], R[:t]
+
 
 class ExternalActor(nn.Module):
     """
@@ -184,11 +188,17 @@ class ExternalActor(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-# ----------------- Offloading Weights Mode -----------------
-if OFFLOAD_MODE:
-    print("[OFFLOAD] offloading_weights_mode enabled (CRIO executes the policy).")
 
-    # Dimensions (defaults infer from your current env sizing)
+# ----------------- Offloading Modes -----------------
+def run_offloading(mode_train: bool):
+    """
+    mode_train=True  -> OFFLOADING_TRAIN (train from trajectories, resend weights)
+    mode_train=False -> OFFLOAD_INFER (send weights, just log trajectories; no update)
+    """
+    tag = "OFFLOAD_TRAIN" if mode_train else "OFFLOAD_INFER"
+    print(f"[{tag}] enabled (CRIO executes the policy).")
+
+    # Dimensions (defaults infer from env sizing)
     obs_dim   = int(PARAMS.get("obs_dim", N_OBS_ARRAY))
     n_actions = int(PARAMS.get("n_actions", N_ACTUATOR_ARRAY))
     hidden    = PARAMS.get("actor_layers", [8, 8])
@@ -197,70 +207,75 @@ if OFFLOAD_MODE:
     actor = ExternalActor(obs_dim, hidden, n_actions)
     optimizer = optim.Adam(actor.parameters(), lr=float(PARAMS.get("ppo_learning_rate", 1e-3)))
 
-    # If you want to resume, load a torch checkpoint from LOG_DIR (optional)
+    # Optional resume from last torch checkpoint
     ckpt_path = os.path.join(LOG_DIR, "external_actor.pt")
     if os.path.exists(ckpt_path):
         actor.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
-        print(f"[OFFLOAD] Loaded actor from {ckpt_path}")
+        print(f"[{tag}] Loaded actor from {ckpt_path}")
 
     target_address = (send_ip, PARAMS["udp_port_send"])
-
-    # arch header string compatible with your previous format
     arch_header = f"{obs_dim}_" + "_".join(map(str, hidden)) + f"_{n_actions}"
 
-    # ---- Send initial weights (single UDP datagram, same format as your old script) ----
+    # Send initial weights (single datagram)
     msg = serialize_weights_like_keras_torch(actor, arch_header, IDENTIFIER_STR)
     sock_send.sendto(msg.encode("utf-8"), target_address)
-    print("[OFFLOAD] Sent initial model weights to CRIO (single UDP message).")
+    print(f"[{tag}] Sent initial model weights to CRIO.")
 
     total_eps = int(PARAMS.get("total_episodes", 1000))
     max_len   = int(PARAMS.get("episode_length", 1000))
 
     for ep in range(total_eps):
-        print(f"[OFFLOAD] Awaiting trajectory for episode {ep+1} ...")
+        print(f"[{tag}] Awaiting trajectory for episode {ep+1} ...")
         X, Y, R = recv_trajectory(sock_recv, max_len, obs_dim, n_actions, timeout_s=TRAJ_TIMEOUT_S)
         steps = len(X)
         if steps == 0:
-            print("[OFFLOAD] No trajectory received (timeout). Resending last weights and continuing.")
+            print(f"[{tag}] No trajectory received (timeout). Resending last weights and continuing.")
             sock_send.sendto(msg.encode("utf-8"), target_address)
             continue
 
-        # Advantage-weighted MSE between predicted actions and CRIO actions
-        adv = R.squeeze()
-        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        ret = float(R.sum())
+        last_loss = np.nan
 
-        X_t = torch.from_numpy(X)
-        Y_t = torch.from_numpy(Y)
-        W_t = torch.from_numpy(adv.astype(np.float32)).view(-1, 1)
+        if mode_train:
+            # Advantage-weighted MSE between predicted actions and CRIO actions
+            adv = R.squeeze()
+            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
-        actor.train()
-        last_loss = None
-        for _ in range(EPOCHS_PER_EP):
-            optimizer.zero_grad()
-            pred = actor(X_t)  # linear output
-            loss = torch.mean(((pred - Y_t) ** 2) * (W_t.abs() + 1e-3))
-            loss.backward()
-            optimizer.step()
-            last_loss = float(loss.item())
+            X_t = torch.from_numpy(X)
+            Y_t = torch.from_numpy(Y)
+            W_t = torch.from_numpy(adv.astype(np.float32)).view(-1, 1)
 
-        # Save and re-send updated weights (same single-message format)
-        torch.save(actor.state_dict(), ckpt_path)
-        msg = serialize_weights_like_keras_torch(actor, arch_header, IDENTIFIER_STR)
+            actor.train()
+            for _ in range(EPOCHS_PER_EP):
+                optimizer.zero_grad()
+                pred = actor(X_t)  # linear output
+                loss = torch.mean(((pred - Y_t) ** 2) * (W_t.abs() + 1e-3))
+                loss.backward()
+                optimizer.step()
+                last_loss = float(loss.item())
+
+            # Save & refresh weight string
+            torch.save(actor.state_dict(), ckpt_path)
+            msg = serialize_weights_like_keras_torch(actor, arch_header, IDENTIFIER_STR)
+
+        # Re-send weights every episode (both train & infer offload)
         sock_send.sendto(msg.encode("utf-8"), target_address)
 
         # Minimal CSV log
         with open(os.path.join(LOG_DIR, "external_training.csv"), "a") as f:
-            ret = float(R.sum())
-            f.write(f"{ep+1},{steps},{ret:.6f},{last_loss:.6f}\n")
+            f.write(f"{ep+1},{steps},{ret:.6f},{(last_loss if mode_train else np.nan):.6f}\n")
 
-        print(f"[OFFLOAD] Episode {ep+1}: steps={steps}, return={ret:.4f}, loss={last_loss:.6f} | weights sent.")
+        print(f"[{tag}] Episode {ep+1}: steps={steps}, return={ret:.4f}"
+              + (f", loss={last_loss:.6f}" if mode_train else "")
+              + " | weights sent.")
 
     sock_send.close()
     sock_recv.close()
-    print("Execution complete (offloading mode). Logs in:", LOG_DIR)
+    print(f"Execution complete ({tag}). Logs in: {LOG_DIR}")
     raise SystemExit(0)
 
-# ----------------- Custom Gym Environment (standard path) -----------------
+
+# ----------------- Custom Gym Environment (online modes) -----------------
 class CRIOUDPEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
 
@@ -352,14 +367,16 @@ class CRIOUDPEnv(gym.Env):
     def render(self, mode="human"): pass
     def close(self): pass
 
-# ----------------- Env setup -----------------
+
+# ----------------- Env setup (online modes) -----------------
 def make_env():
     env = CRIOUDPEnv()
     return Monitor(env, filename=os.path.join(LOG_DIR, "env_monitor"))
 
 env = DummyVecEnv([make_env])
 
-# ----------------- PPO builder (training branch) -----------------
+
+# ----------------- PPO builder (online training) -----------------
 def build_ppo(env_):
     return PPO(
         "MlpPolicy", env_, verbose=1,
@@ -379,21 +396,22 @@ def build_ppo(env_):
         ),
     )
 
-# ----------------- MAIN BRANCHING -----------------
-model = None
-model_name = f"{ALGO_TYPE.lower()}_crio"
 
-# ----- INFERENCE ONLY -----
-if INFERENCE_ONLY:
-    zip_path = MODEL_PATH + ".zip" if not MODEL_PATH.endswith(".zip") else MODEL_PATH
-    if not os.path.exists(zip_path):
+# ----------------- MAIN BRANCHING -----------------
+if OFFLOAD_TRAIN or OFFLOAD_INFER:
+    # CRIO executes policy; Python sends/receives weights & trajectories
+    run_offloading(mode_train=OFFLOAD_TRAIN)
+
+elif ONLINE_INFER:
+    # Load PPO and run inference only (Python acts; no training)
+    if not MODEL_ZIP_PATH or not os.path.exists(MODEL_ZIP_PATH):
         raise FileNotFoundError(
-            f"INFERENCE_ONLY is set but model checkpoint not found at: {zip_path}\n"
-            f"Tip: set 'model_path' to the base path (without .zip) or full zip path."
+            f"[INFERENCE] model_path not found: {MODEL_ZIP_PATH}. "
+            f"Please set 'model_path' to a valid SB3 .zip."
         )
 
-    print(f"[INFERENCE] Loading {ALGO_TYPE} model from: {zip_path}")
-    model = PPO.load(zip_path, env=None, device="cpu")
+    print(f"[INFERENCE] Loading {ALGO_TYPE} model from: {MODEL_ZIP_PATH}")
+    model = PPO.load(MODEL_ZIP_PATH, env=None, device="cpu")
 
     base_env = env.envs[0]  # Monitor-wrapped Gymnasium env
 
@@ -413,9 +431,9 @@ if INFERENCE_ONLY:
                 print(f"[INFER] Episode {ep+1} finished: steps={steps}, return={ep_rew:.4f}")
                 break
 
-# ----- TRAINING (original behavior) -----
 else:
-    print("[TRAIN] create_new_model is True or load flag not set; entering training branch.")
+    # ONLINE_TRAIN = True
+    print("[TRAIN] Online training mode (SB3 PPO).")
     eval_callback = EvalCallback(
         env,
         best_model_save_path=LOG_DIR,
@@ -432,9 +450,12 @@ else:
 
     model = build_ppo(env)
 
-    for i in range(int(PARAMS["total_episodes"] * PARAMS["episode_length"] // N_STEPS)):
+    # Learn in chunks of N_STEPS; save a timestamped snapshot after each chunk
+    total_chunks = int(PARAMS["total_episodes"] * PARAMS["episode_length"] // N_STEPS)
+    for _ in range(total_chunks):
         model.learn(total_timesteps=N_STEPS, reset_num_timesteps=False, callback=callback)
         model.save(os.path.join(LOG_DIR, f"model_{ALGO_TYPE}_{datetime.now().strftime('%H%M%S')}"))
+
 
 # ----------------- Training monitor plot (harmless during inference) -----------------
 monitor_files = glob.glob(os.path.join(LOG_DIR, "*monitor.csv"))

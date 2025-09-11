@@ -11,7 +11,11 @@
   "scalar_reward": 0.02,
   "reward_type": "CTA",
 
-  "training": false,
+  "online_training": false,
+  "online_inference": true,
+  "offloading_training": false,
+  "offload_inference": false,
+
   "evaluation": true,
 
   "eval_freq": 400,
@@ -19,10 +23,7 @@
   "episode_length": 50,
   "total_episodes": 10000,
 
-  "create_new_model": false,
-  "load_model_path": true,
   "model_path": "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment-v2/09-test-CTA-DRL/logs_v1_20250910/model_PPO_20250910-1531/model_PPO_154433.zip",
-
   "log_dir_template": "logs_v1_20250910/model_PPO_{}",
 
   "crio_ip": "172.22.11.2",
@@ -47,12 +48,6 @@
   "ppo_gamma": 0.5,
   "ppo_normalize_advantage": true,
 
-  "ddpg_learning_rate": 0.05,
-  "buffer_size": 100000,
-  "tau": 0.005,
-  "ou_sigma": 0.2,
-  "delta_t": 0.01,
-
   "actor_layers": [8, 8],
   "critic_layers": [8, 8],
 
@@ -60,7 +55,6 @@
   "inference_deterministic": true,
   "inference_print_every": 10,
 
-  "offloading_weights_mode": false,
   "trajectory_timeout": 5.0,
   "epochs_per_episode": 5,
   "identifier_str": "Control_id_x"
