@@ -43,7 +43,7 @@ class TensorboardLoggingCallback(BaseCallback):
 
 
 # ----------------- Load configuration -----------------
-with open(f"./conf/{args.json_file}", "r") as f:
+with open(f"./{args.json_file}", "r") as f:
     PARAMS = json.load(f)
 
 DEBUG      = PARAMS.get("DEBUG", False)
@@ -77,7 +77,7 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # Save a copy of the JSON config inside the log directory
 try:
     json_copy_path = os.path.join(LOG_DIR, "config.json")
-    shutil.copyfile(f"./conf/{args.json_file}", json_copy_path)
+    shutil.copyfile(f"./{args.json_file}", json_copy_path)
     print(f"[INFO] Copied config to {json_copy_path}")
 except Exception as e:
     print(f"[WARN] Could not copy config JSON: {e}")
