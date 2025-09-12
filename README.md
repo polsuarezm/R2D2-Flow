@@ -1,4 +1,4 @@
-# DRL UDP Agent on KV260 with CRIO Interface
+# R2D2-Flow: Real-time Reinforcement learning for Drag reduction and Dynamics control in Flow control experiments. 
 
 This project runs a Deep Reinforcement Learning (DRL) inference + training loop on the KV260 board using a TFLite model. It communicates with a National Instruments CRIO over UDP, sending binary actions and receiving observations.
 
