@@ -1,7 +1,4 @@
-Perfect, thanks for pasting the old README.
-Here’s the **updated `README.md`** reflecting the new Makefile interface and improved JSON validation:
 
-````markdown
 # DRL-EXPERIMENTAL KV260
 
 UDP-based reinforcement learning framework for PPO with support for:
@@ -269,9 +266,5 @@ make debug-local-offloading JSON=input_parameters_20250911.json
 * `plot_live.py` is safe against partial writes (reads CSV line-buffered).
 * If weight strings get too large for a single datagram, chunking will be needed (current version assumes fits in one UDP packet).
 
-```
-
-Do you also want me to add a **“Troubleshooting”** section at the end of the README with the common errors you hit (like Makefile syntax errors, JSON validation fails, port already in use)?
-```
 
 
