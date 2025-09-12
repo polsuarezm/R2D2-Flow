@@ -20,7 +20,7 @@ args = parser.parse_args()
 # === Configuration ===
 #CSV_FILE = "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment/09-test-CTA-DRL/logs_v1/PPO_V1noUDP_20250703-1717/live_rewards.csv"
 #CSV_FILE = "/scratch/polsm/011-DRL-experimental/AFC-DRL-experiment-v3/09-test-CTA-DRL/logs_debug_eval/model_PPO_20250703-1841/live_rewards.csv"
-with open(f"conf/{args.json_file}", "r") as f:
+with open(f"./{args.json_file}", "r") as f:
     PARAMS = json.load(f)
 
 #CSV_FILE = f"./logs_v1_20250910/logfile-{args.case_name}.csv"
