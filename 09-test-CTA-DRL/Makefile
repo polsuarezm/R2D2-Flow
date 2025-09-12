@@ -5,7 +5,7 @@
 
 SHELL := /bin/bash
 JSON ?=
-CONF_DIR := conf
+CONF_DIR := 
 RUN := run_training_UDP_debug_v1_20250911.py
 PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 
