@@ -1,0 +1,62 @@
+{
+  "case_name": "A034",
+  "env_path_toactivate": "/home/polete/Documents/DRL-tflite-KV260-env/bin",
+
+  "size_actuator_array": 1,
+  "size_obs_array_per_UDP": 4,
+  "total_descarte": 1,
+  "total_descarte_used": 1,
+
+  "message_type": 1,
+  "scalar_reward": 0.02,
+  "reward_type": "CTA",
+
+  "online_training": true,
+  "online_inference": false,
+  "offloading_training": false,
+  "offload_inference": false,
+
+  "evaluation": false,
+
+  "eval_freq": 400,
+  "n_eval_episodes": 2,
+  "episode_length": 50,
+  "total_episodes": 10000,
+
+  "model_path": "/home/guardiola-pcaux/Documentos/AFC-DRL-experiment-v2/09-test-CTA-DRL/logs_v1_20250910/model_PPO_20250910-1531/model_PPO_154433.zip",
+  "log_dir_template": "logs_v1_20250910/model_PPO_{}",
+
+  "crio_ip": "172.22.11.2",
+  "hp_ip": "172.22.11.1",
+  "debug_ip": "127.0.0.1",
+  "udp_port_send": 61557,
+  "udp_port_recv": 61555,
+
+  "DEBUG": false,
+  "debugging_IP": true,
+
+  "action_min": -1,
+  "action_max": 1,
+
+  "n_steps": 100,
+  "batch_size": 40,
+  "n_epochs": 5,
+
+  "algo_type": "PPO",
+  "ppo_learning_rate": 0.02,
+  "ppo_log_std_init": 0.7,
+  "ppo_gamma": 0.5,
+  "ppo_normalize_advantage": true,
+
+  "actor_layers": [8, 8],
+  "critic_layers": [8, 8],
+
+  "inference_episodes": 1000,
+  "inference_deterministic": true,
+  "inference_print_every": 10,
+
+  "trajectory_timeout": 5.0,
+  "epochs_per_episode": 5,
+  "identifier_str": "Control_id_x"
+}
+

@@ -74,6 +74,14 @@ MODEL_ZIP_PATH = _model_path if _model_path.endswith(".zip") else (_model_path +
 LOG_DIR = PARAMS["log_dir_template"].format(datetime.now().strftime("%Y%m%d-%H%M"))
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# Save a copy of the JSON config inside the log directory
+try:
+    json_copy_path = os.path.join(LOG_DIR, "config.json")
+    shutil.copyfile(f"./conf/{args.json_file}", json_copy_path)
+    print(f"[INFO] Copied config to {json_copy_path}")
+except Exception as e:
+    print(f"[WARN] Could not copy config JSON: {e}")
+
 ACTION_MIN = float(PARAMS["action_min"])
 ACTION_MAX = float(PARAMS["action_max"])
 N_STEPS    = int(PARAMS["n_steps"])
