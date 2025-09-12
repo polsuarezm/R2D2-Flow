@@ -11,9 +11,9 @@
   "scalar_reward": 0.02,
   "reward_type": "CTA",
 
-  "online_training": false,
+  "online_training": true,
   "online_inference": false,
-  "offloading_training": true,
+  "offloading_training": false,
   "offload_inference": false,
 
   "evaluation": false,
