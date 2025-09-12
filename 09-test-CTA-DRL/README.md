@@ -1,3 +1,7 @@
+Perfect, thanks for pasting the old README.
+Here’s the **updated `README.md`** reflecting the new Makefile interface and improved JSON validation:
+
+````markdown
 # DRL-EXPERIMENTAL KV260
 
 UDP-based reinforcement learning framework for PPO with support for:
@@ -20,7 +24,7 @@ cd <your_repo>
 make venv          # create .venv (Python 3.9+ recommended)
 source .venv/bin/activate
 make install       # install dependencies
-```
+````
 
 Dependencies installed:
 
@@ -110,13 +114,13 @@ Set **exactly one** of the following to `true`:
 * `"offloading_training"`
 * `"offload_inference"`
 
-The `make check-mode JSON=...` command ensures your JSON is valid.
+The `make check-json JSON=...` command ensures your JSON is valid (keys present, port ranges OK, model exists if required, etc.).
 
 ---
 
 ## 3. Running
 
-All runs go through `run.py`.
+All runs go through `run_training_UDP_debug_v1_20250911.py`.
 Use the **Makefile** to simplify commands.
 
 ### Online Training (SB3 PPO in Python)
@@ -143,10 +147,10 @@ make train-offload JSON=input_parameters_20250911.json
 make infer-offload JSON=input_parameters_20250911.json
 ```
 
-### Validate JSON mode
+### Validate JSON mode & keys
 
 ```bash
-make check-mode JSON=input_parameters_20250911.json
+make check-json JSON=input_parameters_20250911.json
 ```
 
 ---
@@ -163,7 +167,7 @@ logs_v1_YYYYMMDD/model_PPO_HHMM
 
 | File                                | When              | Meaning                                                                   |
 | ----------------------------------- | ----------------- | ------------------------------------------------------------------------- |
-| `live_rewards.csv`                  | all online modes  | Step log: `step,reward,action,timestamp,obs[-4],obs[-3],obs[-2],obs[-1]`. |
+| `live_rewards.csv`                  | online modes      | Step log: `step,reward,action,timestamp,obs[-4],obs[-3],obs[-2],obs[-1]`. |
 | `csv_log/live_rewards_temp.csv`     | all modes         | Rolling copy for live plotting.                                           |
 | `env_monitor.*.csv`                 | online training   | SB3 Monitor log of episodes.                                              |
 | `best_model.zip`, `evaluations.npz` | online training   | From EvalCallback (best checkpoint + eval history).                       |
@@ -184,7 +188,7 @@ make clean-tmp          # remove rolling temp CSV
 
 ## 5. Live Plotting
 
-Use the provided `plot_live_experiment.py` script.
+Use the provided `plot_live.py` script.
 
 ### Continuous live plot
 
@@ -203,16 +207,27 @@ make plot-file JSON=input_parameters_20250911.json CSV=live_rewards.csv
 
 Plots `./csv_log/live_rewards.csv`.
 
-### Generated figures
+---
 
-* Reward vs Step
-* Action vs Step (training vs eval intervals)
-* Action vs Reward
-* obs\[3] vs obs\[2]
+## 6. Local Simulators
+
+Simulators let you test the workflow without hardware.
+
+```bash
+make sim-online_UDP JSON=input_parameters_20250911.json
+make sim-offload_UDP JSON=input_parameters_20250911.json
+```
+
+Run agent + simulator together:
+
+```bash
+make debug-local-online JSON=input_parameters_20250911.json
+make debug-local-offloading JSON=input_parameters_20250911.json
+```
 
 ---
 
-## 6. UDP Protocols
+## 7. UDP Protocols
 
 ### Online modes (Python acts)
 
@@ -247,10 +262,16 @@ Plots `./csv_log/live_rewards.csv`.
 
 ---
 
-## 7. Quick Tips
+## 8. Quick Tips
 
-* Always run `make check-mode JSON=...` before launching — ensures exactly one mode is active.
+* Always run `make check-json JSON=...` before launching — ensures config is valid.
 * For dummy tests (no UDP), set `"evaluation": true` → env.reset() returns ones instead of waiting for UDP.
 * `plot_live.py` is safe against partial writes (reads CSV line-buffered).
 * If weight strings get too large for a single datagram, chunking will be needed (current version assumes fits in one UDP packet).
+
+```
+
+Do you also want me to add a **“Troubleshooting”** section at the end of the README with the common errors you hit (like Makefile syntax errors, JSON validation fails, port already in use)?
+```
+
 
