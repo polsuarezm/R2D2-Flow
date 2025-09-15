@@ -1,4 +1,4 @@
-# R2D2-Flow: Real-time Reinforcement learning for Drag reduction and Dynamics control in Flow control experiments. 
+# R2D2-Flow: Real-time Reinforcement learning for Drag reduction and Dynamics in Flow control experiments. 
 
 UDP-based reinforcement learning framework for PPO with support for:
 
