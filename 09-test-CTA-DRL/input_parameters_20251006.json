@@ -5,8 +5,8 @@
   "size_actuator_array": 1,
   "size_obs_array_per_UDP": 4,
 
-  "total_descarte": 50,
-  "total_descarte_used": 50,
+  "skip_first_udp": 1,
+  "sample_history_size": 100,
 
   "message_type": 1,
   "scalar_reward": 0.02,

@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 JSON ?=
 CONF_DIR := .
-RUN := run_training_UDP_debug_v1_20250911.py
+RUN := run_training_UDP_debug_v1_20251006.py
 PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 
 .PHONY: help
@@ -58,12 +58,12 @@ p=os.path.join('$(CONF_DIR)','$(JSON)'); d=json.load(open(p)); \
 flags={'online_training':bool(d.get('online_training',False)),'online_inference':bool(d.get('online_inference',False)),'offloading_training':bool(d.get('offloading_training',False)),'offload_inference':bool(d.get('offload_inference',False))}; \
 ts=[k for k,v in flags.items() if v]; \
 (len(ts)==1) or (print('ERROR: exactly one mode flag must be true:',flags) or sys.exit(1)); \
-req=['message_type','size_obs_array_per_UDP','total_descarte','total_descarte_used','size_actuator_array','udp_port_send','udp_port_recv','action_min','action_max','episode_length','total_episodes','log_dir_template','crio_ip','hp_ip','debug_ip']; \
+req=['message_type','size_obs_array_per_UDP','sample_history_size','skip_first_udp','size_actuator_array','udp_port_send','udp_port_recv','action_min','action_max','episode_length','total_episodes','log_dir_template','crio_ip','hp_ip','debug_ip']; \
 all(k in d for k in req) or (print('ERROR: missing keys:',[k for k in req if k not in d]) or sys.exit(1)); \
 all(isinstance(d.get(k),int) and d[k]>0 for k in ['size_obs_array_per_UDP','size_actuator_array','episode_length','total_episodes']) or (print('ERROR: size_* and episode_* must be positive ints') or sys.exit(1)); \
-all(isinstance(d.get(k),int) and d[k]>=0 for k in ['total_descarte','total_descarte_used']) or (print('ERROR: descarte values must be nonnegative ints') or sys.exit(1)); \
-(d['total_descarte_used']<=d['total_descarte']) or (print('ERROR: total_descarte_used > total_descarte') or sys.exit(1)); \
+all(isinstance(d.get(k),int) and d[k]>=0 for k in ['skip_first_udp','sample_history_size']) or (print('ERROR: skip_first_udp and sample_history_size must be nonnegative ints') or sys.exit(1)); \
 all(isinstance(d.get(k),int) and 1<=d[k]<=65535 for k in ['udp_port_send','udp_port_recv']) or (print('ERROR: ports must be 1..65535') or sys.exit(1)); \
+((isinstance(d.get('action_min'),(int,float)) and isinstance(d.get('action_max'),(int,float)) and (d['action_min']<d['action_max']))) or (print('ERROR: action_min must be < action_max') or sys.exit(1)); \
 ((not flags['online_inference']) or (isinstance(d.get('model_path',''),str) and d['model_path'].endswith('.zip') and os.path.exists(d['model_path']))) or (print('ERROR: online_inference needs existing .zip model_path') or sys.exit(1)); \
 print('OK: JSON validated. Mode =',ts[0])"
 
@@ -139,3 +139,4 @@ debug-local-offloading: check-json
 > ( $(PY) $(RUN) --json_file $(JSON) ) & \
 > ( $(PY) simulator_local_offloading.py --json_file $(JSON) ); \
 > wait
+
