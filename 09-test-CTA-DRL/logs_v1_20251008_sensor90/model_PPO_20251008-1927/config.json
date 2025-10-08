@@ -15,7 +15,7 @@
   "beta_meanU": 0.3,
   "re_d": 800,
 
-  "reward_type": "CTA_3",
+  "reward_type": "CTA_sensor90",
 
   "online_training": true,
   "online_inference": false,

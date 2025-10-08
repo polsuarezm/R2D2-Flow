@@ -429,6 +429,8 @@ class CRIOUDPEnv(gym.Env):
             reward = self._compute_reward_peak_fft_v1(obs) 
         elif REWARD_TYPE == "CTA_2":
             reward = self._compute_reward_peak_fft_v2(obs,RE_D,ALPHA_FFT,BETA_MEAN)
+        elif REWARD_TYPE == "CTA_3":
+            reward = self._compute_reward_peak_fft_v3(obs,RE_D,ALPHA_FFT,BETA_MEAN)
         else:
             self._compute_reward_debug_internalUDP(obs)
 
@@ -509,6 +511,15 @@ class CRIOUDPEnv(gym.Env):
         aux_meanU   = obs_pre_reward[-4]
         #print("meanU_term", aux_meanU)
         mean_term = (0.0002*Re + 1.4433)-aux_meanU
+        #print("mean_term", mean_term)
+        return alpha*(1 - aux_fftpeak / SCALAR_REW_FFT)+beta*(mean_term/SCALAR_REW_MEANU)
+
+    def _compute_reward_peak_fft_v3(self, obs_pre_reward, Re, alpha, beta):
+        aux_fftpeak = obs_pre_reward[-2]
+        #print("fft_term:", aux_fftpeak)
+        aux_meanU   = obs_pre_reward[-4]
+        #print("meanU_term", aux_meanU)
+        mean_term = 1.5-aux_meanU
         #print("mean_term", mean_term)
         return alpha*(1 - aux_fftpeak / SCALAR_REW_FFT)+beta*(mean_term/SCALAR_REW_MEANU)
 
