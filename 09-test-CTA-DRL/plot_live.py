@@ -27,7 +27,7 @@ with open(f"./{args.json_file}", "r") as f:
 #CASE_NAME = PARAMS.get("args.case_name", "debug")
 CSV_FILE = f"./csv_log/{args.csv_file}"
 OUTPUT_PNG = "./figs/last_reward_plot_debug.png"
-PLOT_INTERVAL_SEC = 1.0
+PLOT_INTERVAL_SEC = 0.1
 EVAL_FREQ=PARAMS.get("eval_freq", 5000)
 EPS_LENGTH = PARAMS.get("episode_length", 100)
 N_EVAL_EPS = PARAMS.get("n_eval_episodes", 1)
@@ -66,10 +66,12 @@ while True:
 
             # Create a boolean mask for evaluation intervals
             in_eval = np.full(len(df), False)
+            ii=0
 
             for x in range(0, x_max + 1, EVAL_FREQ):
-                start = x
-                end = x + EPS_LENGTH * N_EVAL_EPS
+                ii=ii+1
+                start = EVAL_FREQ
+                end = ii*(x + EPS_LENGTH * N_EVAL_EPS)
                 in_eval |= (df["step"] >= start) & (df["step"] <= end)
 
             # Plot actions outside eval in blue
@@ -86,8 +88,8 @@ while True:
 
             # Add eval interval markers
             for x in range(0, x_max + 1, EVAL_FREQ):
-                axs[1].axvline(x, color='black', linestyle='-', linewidth=0.5, alpha=0.8)
-                #axs[1].axvline(x + EPS_LENGTH * N_EVAL_EPS, color='black', linestyle='-', linewidth=0.5, alpha=0.8)
+                #axs[1].axvline(x, color='black', linestyle='-', linewidth=0.5, alpha=0.8)
+                axs[1].axvline(x + EPS_LENGTH * N_EVAL_EPS, color='black', linestyle='-', linewidth=0.5, alpha=0.8)
 
             # Labeling and formatting
             axs[1].set_xlabel("step")
@@ -95,10 +97,10 @@ while True:
             axs[1].set_ylabel("action")
             axs[1].set_title("action vs step")
             axs[1].grid(True)
-            axs[3].plot(df["obs2"], df["obs3"], 'o', label="obs3 vs obs2", markersize=3, alpha=0.05, color='red')
-            axs[3].set_xlabel("obs[2]")
-            axs[3].set_ylabel("obs[3]")
-            axs[3].set_title("obs[3] vs obs[2]")
+            axs[3].plot(df["obs0"], df["obs3"], 'o', label="CTA (V)  vs max(FFT)", markersize=3, alpha=0.05, color='red')
+            axs[3].set_xlabel("obs[0]-CTA(V)")
+            axs[3].set_ylabel("obs[2]-max(FFT)")
+            axs[3].set_title("CTA (V)  vs max(FFT)")
             axs[3].grid(True)
             axs[3].legend()
             axs[2].plot(df["action"], df["reward"], 'o', label="action vs obs2", markersize=2, alpha=0.05, color='green')
@@ -112,7 +114,9 @@ while True:
 
             plt.tight_layout()
             plt.savefig(OUTPUT_PNG, dpi=800)
-            plt.show()
+            plt.show(block=False)  # show non-blockingi
+            plt.pause(10)          # keep open for 10 seconds
+            plt.close()
         time.sleep(PLOT_INTERVAL_SEC)
        # plt.close()
         #plt.close()

@@ -80,7 +80,11 @@ N_OBS_ARRAY_PER_UDP = int(PARAMS["size_obs_array_per_UDP"])
 N_ACTUATOR_ARRAY    = int(PARAMS["size_actuator_array"])
 
 MESSAGE_TYPE = int(PARAMS["message_type"])
-SCALAR_REW   = float(PARAMS["scalar_reward"])
+SCALAR_REW_FFT   = float(PARAMS["scalar_reward_fft"])
+SCALAR_REW_MEANU = float(PARAMS["scalar_reward_meanu"])
+ALPHA_FFT    = float(PARAMS["alpha_fft"])
+BETA_MEAN    = float(PARAMS["beta_meanU"])
+RE_D         = int(PARAMS["re_d"])
 SKIP_FIRST_UDP       = int(PARAMS["skip_first_udp"])
 SAMPLE_HISTORY_SIZE  = int(PARAMS["sample_history_size"])  # how many UDPs to accumulate (in addition to current)
 N_OBS_ARRAY = N_OBS_ARRAY_PER_UDP * (SAMPLE_HISTORY_SIZE + 1)
@@ -421,8 +425,12 @@ class CRIOUDPEnv(gym.Env):
         sock_send.sendto(message.encode(), (send_ip, PARAMS["udp_port_send"]))
         obs = self._receive_observation()
 
-        reward = self._compute_reward_peak_fft_v1(obs) if REWARD_TYPE == "CTA" \
-                 else self._compute_reward_debug_internalUDP(obs)
+        if REWARD_TYPE=="CTA_1":
+            reward = self._compute_reward_peak_fft_v1(obs) 
+        elif REWARD_TYPE == "CTA_2":
+            reward = self._compute_reward_peak_fft_v2(obs,RE_D,ALPHA_FFT,BETA_MEAN)
+        else:
+            self._compute_reward_debug_internalUDP(obs)
 
         if self.step_count % 10 == 0:
             print(f"| rew = {reward:.4f} | action = {action} | step = {self.step_count}")
@@ -494,6 +502,15 @@ class CRIOUDPEnv(gym.Env):
     def _compute_reward_peak_fft_v1(self, obs_pre_reward):
         aux = obs_pre_reward[-2]
         return 1 - aux / SCALAR_REW
+    
+    def _compute_reward_peak_fft_v2(self, obs_pre_reward, Re, alpha, beta):
+        aux_fftpeak = obs_pre_reward[-2]
+        #print("fft_term:", aux_fftpeak)
+        aux_meanU   = obs_pre_reward[-4]
+        #print("meanU_term", aux_meanU)
+        mean_term = (0.0002*Re + 1.4433)-aux_meanU
+        #print("mean_term", mean_term)
+        return alpha*(1 - aux_fftpeak / SCALAR_REW_FFT)+beta*(mean_term/SCALAR_REW_MEANU)
 
     def _compute_reward_debug_internalUDP(self, obs_pre_reward):
         return float(obs_pre_reward[-1])
