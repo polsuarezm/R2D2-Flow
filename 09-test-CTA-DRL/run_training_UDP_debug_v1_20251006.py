@@ -329,6 +329,7 @@ def run_offloading(mode_train: bool):
     arch_header = f"{obs_dim}_" + "_".join(map(str, hidden)) + f"_{n_actions}"
 
     msg = serialize_weights_like_keras_torch(actor, arch_header, IDENTIFIER_STR)
+    print("POOOOL --> ", msg)
     sock_send.sendto(msg.encode("utf-8"), target_address)
     print(f"[{tag}] Sent initial model weights to CRIO.")
 
@@ -422,7 +423,7 @@ class CRIOUDPEnv(gym.Env):
         else:
             message = f"{self.timestamp};" + ';'.join(map(str, raw_action))
 
-        sock_send.sendto(message.encode(), (send_ip, PARAMS["udp_port_send"]))
+        #sock_send.sendto(message.encode(), (send_ip, PARAMS["udp_port_send"]))
         obs = self._receive_observation()
 
         if REWARD_TYPE=="CTA_1":

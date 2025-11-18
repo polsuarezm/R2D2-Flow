@@ -17,9 +17,9 @@
 
   "reward_type": "CTA_3",
 
-  "online_training": true,
+  "online_training": false,
   "online_inference": false,
-  "offloading_training": false,
+  "offloading_training": true,
   "offload_inference": false,
 
   "evaluation": false,
