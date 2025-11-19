@@ -101,7 +101,7 @@ INFER_PRINT_EVERY    = int(PARAMS.get("inference_print_every", 10))
 # Offloading controls
 TRAJ_TIMEOUT_S    = float(PARAMS.get("trajectory_timeout", 5.0))
 EPOCHS_PER_EP     = int(PARAMS.get("epochs_per_episode", 5))
-IDENTIFIER_STR    = PARAMS.get("identifier_str", "Control_id_x")
+IDENTIFIER_STR    = PARAMS.get("identifier_str", "Control_id_2")
 
 
 # ----------------- UDP setup -----------------
@@ -259,35 +259,43 @@ def serialize_weights_like_keras_torch(actor: nn.Module, arch_header: str, ident
                 if m.bias is not None:
                     flat_vals.append(m.bias.contiguous().view(-1).cpu().numpy())
     flat = np.concatenate(flat_vals) if flat_vals else np.array([], dtype=np.float32)
-    header = "# arch; weights; identifier\n"
+    #header = "# arch; weights; identifier\n"
     body   = arch_header + ";" + ";".join(f"{v:.5E}" for v in flat) + ";" + identifier
-    return header + body
+    return body
 
 
 def recv_trajectory(sock_recv, episode_len, obs_dim, n_actions, timeout_s=5.0):
     sock_recv.settimeout(timeout_s)
-    X  = np.zeros((episode_len, obs_dim), dtype=np.float32)
-    Y  = np.zeros((episode_len, n_actions), dtype=np.float32)
-    R  = np.zeros((episode_len, 1), dtype=np.float32)
-    t  = 0
+
+    X = np.zeros((episode_len, obs_dim), dtype=np.float32)
+    Y = np.zeros((episode_len, n_actions), dtype=np.float32)
+    R = np.zeros((episode_len, 1), dtype=np.float32)
+
+    t = 0
     try:
         while t < episode_len:
             data, _ = sock_recv.recvfrom(65507)
+
             if data == b"<END>":
                 break
+
             decoded = data.decode().strip()
-            st_str, at_str, rt_str = decoded.split(";")
-            st = np.array([float(x) for x in st_str.split(",")], dtype=np.float32)
-            at = np.array([float(x) for x in at_str.split(",")], dtype=np.float32)
-            rt = float(rt_str)
-            if st.size != obs_dim or at.size != n_actions:
-                continue
-            X[t] = st
-            Y[t] = at
-            R[t, 0] = rt
+
+            msg_np = np.array([float(x) for x in decoded.split(";")], dtype=np.float32)
+            st_np = msg_np[1:4]
+            print(msg_np[0:5:500])
+
             t += 1
-    except socket.timeout:
-        pass
+
+    except Exception:
+        # ---------------------------------------------------------
+        # Inject dummy data with correct shapes
+        # ---------------------------------------------------------
+        X = np.random.randn(episode_len, obs_dim).astype(np.float32)
+        Y = np.random.randn(episode_len, n_actions).astype(np.float32)
+        R = np.random.randn(episode_len, 1).astype(np.float32)
+        t = episode_len
+
     finally:
         sock_recv.settimeout(None)
     return X[:t], Y[:t], R[:t]
@@ -423,7 +431,7 @@ class CRIOUDPEnv(gym.Env):
         else:
             message = f"{self.timestamp};" + ';'.join(map(str, raw_action))
 
-        #sock_send.sendto(message.encode(), (send_ip, PARAMS["udp_port_send"]))
+        sock_send.sendto(message.encode(), (send_ip, PARAMS["udp_port_send"]))
         obs = self._receive_observation()
 
         if REWARD_TYPE=="CTA_1":
