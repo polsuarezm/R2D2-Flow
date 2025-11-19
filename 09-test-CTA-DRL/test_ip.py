@@ -16,7 +16,7 @@ print(f"📡 Listening on {PC_IP}:{UDP_PORT_RECV}... expecting 5 values, echoing
 
 try:
     while True:
-        data, addr = sock_recv.recvfrom(1024)
+        data, addr = sock_recv.recvfrom(2048)
         msg = data.decode().strip()
         fields = msg.split(";")
         print(f"\n📥 Received from {addr}: {msg}")

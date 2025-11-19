@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 JSON ?=
 CONF_DIR := .
-RUN := run_training_UDP_debug_v1_20251006.py
+RUN := run_training_UDP_debug_v1_20251119.py
 PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 
 .PHONY: help
