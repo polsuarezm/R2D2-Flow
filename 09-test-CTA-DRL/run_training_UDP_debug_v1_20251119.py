@@ -1,6 +1,6 @@
 # === DRL-EXPERIMENTAL KV260
 # === Full Training/Inference Script with Enhanced TensorBoard Logging, EvalCallback,
-# === and CRIO Offloading Modes (trajectory-in / weights-out over UDP) ===
+# === and CRIO Offloading Modes (trajectory-in / weights-out over UDP, PPO clipping) ===
 
 import socket, json, os, glob, shutil, time
 import numpy as np
@@ -89,6 +89,9 @@ SKIP_FIRST_UDP       = int(PARAMS["skip_first_udp"])
 SAMPLE_HISTORY_SIZE  = int(PARAMS["sample_history_size"])  # how many UDPs to accumulate (in addition to current)
 N_OBS_ARRAY = N_OBS_ARRAY_PER_UDP * (SAMPLE_HISTORY_SIZE + 1)
 
+# Optional scalar for CTA_1 (fallback: reuse FFT scalar)
+SCALAR_REW = float(PARAMS.get("scalar_reward", SCALAR_REW_FFT))
+
 time.sleep(1.0)  # brief pause to ensure log dir is ready
 
 REWARD_TYPE = PARAMS.get("reward_type", "").upper()
@@ -98,7 +101,7 @@ INFER_EPISODES       = int(PARAMS.get("inference_episodes", 1))
 INFER_DETERMINISTIC  = bool(PARAMS.get("inference_deterministic", True))
 INFER_PRINT_EVERY    = int(PARAMS.get("inference_print_every", 10))
 
-# Offloading controlsTRAJ_TIMEOUT_S    = float(PARAMS.get("trajectory_timeout", 5.0))
+# Offloading controls
 TRAJ_TIMEOUT_S    = float(PARAMS.get("trajectory_timeout", 20.0))
 IDENTIFIER_STR    = PARAMS.get("identifier_str", "Control_id_2")
 
@@ -237,7 +240,6 @@ class EnhancedTensorboardLoggingCallback(BaseCallback):
 
         # PPO learning rate (visible in TB)
         try:
-            # SB3's lr_schedule expects current progress remaining or num_timesteps depending version.
             lr = self.model.lr_schedule(1.0) if callable(self.model.lr_schedule) else None
             if lr is None or isinstance(lr, (list, tuple)):
                 lr = self.model.learning_rate if hasattr(self.model, "learning_rate") else None
@@ -321,32 +323,93 @@ def compute_reward_from_obs(obs_batch: np.ndarray) -> np.ndarray:
     return rewards.reshape(-1, 1).astype(np.float32)
 
 
-def recv_trajectory(sock_recv, episode_len, obs_dim, n_actions):
+def compute_gae(rewards, values, dones, gamma, lam):
     """
-    Minimal version for debugging.
+    Compute Generalized Advantage Estimation (GAE) and returns for PPO.
 
-    Assumptions:
-      - Exactly ONE UDP datagram contains the FULL episode:
-            obs1[0:obs_dim]; act1[0:n_actions];
-            obs2[0:obs_dim]; act2[0:n_actions];
-            ...
-      - No timeouts, no try/except: will block on recvfrom()
-        until some packet arrives or you Ctrl+C.
+    Parameters
+    ----------
+    rewards : torch.Tensor, shape (T, 1)
+        Per-step rewards.
+    values : torch.Tensor, shape (T, 1)
+        Value estimates V(s_t).
+    dones : torch.Tensor, shape (T, 1)
+        Done flags (1.0 at terminal states, else 0.0).
+    gamma : float
+        Discount factor.
+    lam : float
+        GAE lambda parameter.
 
-    Returns:
-      X : (T, obs_dim)
-      Y : (T, n_actions)
-      R : (T, 1)  via compute_reward_from_obs(X)
+    Returns
+    -------
+    adv : torch.Tensor, shape (T, 1)
+        Advantage estimates.
+    returns : torch.Tensor, shape (T, 1)
+        Target returns: adv + values.
     """
+    T = rewards.shape[0]
+    adv = torch.zeros_like(rewards)
+    last_gae = 0.0
 
-    per_step_tokens = obs_dim + n_actions
-    if per_step_tokens <= 0:
-        raise ValueError(
-            f"[recv_trajectory] Invalid per_step_tokens={per_step_tokens} "
-            f"(obs_dim={obs_dim}, n_actions={n_actions})"
+    for t in reversed(range(T)):
+        next_non_terminal = 1.0 - dones[t].item()
+        if t == T - 1:
+            next_value = 0.0
+        else:
+            next_value = values[t + 1].item()
+        delta = (
+            rewards[t].item()
+            + gamma * next_value * next_non_terminal
+            - values[t].item()
         )
+        last_gae = delta + gamma * lam * next_non_terminal * last_gae
+        adv[t] = last_gae
 
-    # Blocking receive: waits here until *one* datagram arrives
+    returns = adv + values
+    return adv, returns
+
+
+def recv_trajectory(sock_recv, episode_len, obs_dim_full, n_actions):
+    """
+    Receive ONE full-episode UDP datagram and build:
+        X : (T, obs_dim_full)     # history-augmented obs: [obs_{k-H},...,obs_k]
+        Y : (T, n_actions)        # actions from CRIO
+        R : (T, 1)                # rewards using obs from step n+1
+
+    CURRENT UDP payload format (per step):
+        t_k; obs_k[0:raw_dim]; act_k[0:n_actions];
+
+    where:
+        raw_dim        = N_OBS_ARRAY_PER_UDP
+        H              = SAMPLE_HISTORY_SIZE
+        obs_dim_full   = raw_dim * (H+1)
+
+    Notes
+    -----
+    - T is determined by the number of tokens and episode_len (min).
+    - Reward is computed from X shifted by +1 (obs at n+1).
+    - No timeouts/try-except: blocks until the full datagram arrives.
+    """
+
+    # ----- 0) Basic dimensions -----
+    raw_dim = N_OBS_ARRAY_PER_UDP        # per-step raw obs (from CRIO)
+    H = SAMPLE_HISTORY_SIZE
+    hist_len = H + 1
+    expected_full = raw_dim * hist_len
+
+    assert obs_dim_full == expected_full, (
+        f"[recv_trajectory] obs_dim_full={obs_dim_full} != raw_dim*hist_len={expected_full} "
+        f"(raw_dim={raw_dim}, H={H})"
+    )
+
+    # per-step: t_k + raw_dim obs + n_actions
+    per_step_tokens = 1 + raw_dim + n_actions
+    assert per_step_tokens > 0, (
+        f"[recv_trajectory] Invalid per_step_tokens={per_step_tokens} "
+        f"(raw_dim={raw_dim}, n_actions={n_actions})"
+    )
+
+    # ----- 1) Blocking receive of ONE UDP datagram -----
     print("[recv_trajectory] Waiting for one UDP datagram with full episode...")
     sock_recv.setblocking(True)
     data, addr = sock_recv.recvfrom(65507)
@@ -356,33 +419,81 @@ def recv_trajectory(sock_recv, episode_len, obs_dim, n_actions):
     tokens = [t for t in decoded.split(";") if t != ""]
     print(f"[recv_trajectory] Total tokens in datagram: {len(tokens)}")
 
-    if len(tokens) % per_step_tokens != 0:
-        raise RuntimeError(
-            f"[recv_trajectory] Token count {len(tokens)} is not a multiple of "
-            f"per_step_tokens={per_step_tokens} (obs_dim={obs_dim}, n_actions={n_actions})."
-        )
+    assert len(tokens) % per_step_tokens == 0, (
+        f"[recv_trajectory] Token count {len(tokens)} is not a multiple of "
+        f"per_step_tokens={per_step_tokens} (1 + raw_dim + n_actions)."
+    )
 
     max_steps = len(tokens) // per_step_tokens
-    if max_steps == 0:
-        raise RuntimeError(
-            f"[recv_trajectory] Buffer too short: {len(tokens)} tokens, "
-            f"need at least {per_step_tokens} for one step."
+    assert max_steps > 0, (
+        f"[recv_trajectory] Buffer too short: {len(tokens)} tokens, "
+        f"need at least {per_step_tokens} for one step."
+    )
+
+    T = min(episode_len, max_steps)
+    if T < max_steps:
+        print(
+            f"[recv_trajectory] Truncating from {max_steps} to {T} steps "
+            f"(episode_len={episode_len})."
         )
 
-    flat_arr = np.array([float(t) for t in tokens], dtype=np.float32)
-    traj_mat = flat_arr.reshape(T, per_step_tokens)  # (T, obs_dim + n_actions)
-
-    # Split into obs and actions
-    X = traj_mat[:, :obs_dim].astype(np.float32)
+    # ----- 2) Extract raw obs and actions per step -----
+    raw_obs_seq = np.zeros((T, raw_dim), dtype=np.float32)
     if n_actions > 0:
-        Y = traj_mat[:, obs_dim:obs_dim + n_actions].astype(np.float32)
+        Y = np.zeros((T, n_actions), dtype=np.float32)
     else:
         Y = np.zeros((T, 0), dtype=np.float32)
 
-    # Compute rewards from obs (CTA_3 etc.)
-    R = compute_reward_from_obs(X)  # must return (T, 1)
+    for k in range(T):
+        base = k * per_step_tokens
+        # tokens[base]     -> timestamp t_k (ignored beyond logging)
+        # tokens[base+1 : base+1+raw_dim]                   -> obs_k
+        # tokens[base+1+raw_dim : base+1+raw_dim+n_actions] -> act_k
+        obs_tokens = tokens[base + 1 : base + 1 + raw_dim]
+        act_tokens = tokens[base + 1 + raw_dim : base + 1 + raw_dim + n_actions]
 
-    print(f"[recv_trajectory] Got trajectory: steps={T}, obs_dim={obs_dim}, n_actions={n_actions}")
+        raw_obs_seq[k, :] = np.array([float(v) for v in obs_tokens], dtype=np.float32)
+        if n_actions > 0:
+            Y[k, :] = np.array([float(v) for v in act_tokens], dtype=np.float32)
+
+    print("[recv_trajectory] First obs row:", raw_obs_seq[0])
+    if n_actions > 0:
+        print("[recv_trajectory] First action:", Y[0])
+
+    # ----- 3) Build history-augmented obs X: (T, obs_dim_full) -----
+    X = np.zeros((T, obs_dim_full), dtype=np.float32)
+
+    hist = deque(
+        [np.zeros(raw_dim, dtype=np.float32) for _ in range(hist_len)],
+        maxlen=hist_len
+    )
+
+    for k in range(T):
+        hist.append(raw_obs_seq[k])                      # push obs_k (newest)
+        full_obs_k = np.concatenate(list(hist))          # [obs_{k-H},...,obs_k]
+
+        if full_obs_k.size >= obs_dim_full:
+            X[k, :] = full_obs_k[-obs_dim_full:]
+        else:
+            X[k, :] = 0.0
+            X[k, :full_obs_k.size] = full_obs_k
+
+    # ----- 4) Compute rewards using obs from step n+1 -----
+    # X[k]   = s_k (input used to compute action a_k)
+    # reward r_k uses s_{k+1}, i.e. X[k+1] (shifted by +1)
+    if T > 1:
+        X_for_rew = np.vstack([X[1:], X[-1:]])   # shift by +1, last repeats
+    else:
+        X_for_rew = X.copy()
+
+    R = compute_reward_from_obs(X_for_rew)  # shape (T,1)
+
+    print(
+        f"[recv_trajectory] Built trajectory: steps={T}, "
+        f"raw_dim={raw_dim}, hist_len={hist_len}, obs_dim_full={obs_dim_full}, "
+        f"n_actions={n_actions}"
+    )
+
     return X, Y, R
 
 
@@ -432,39 +543,78 @@ class ExternalActor(nn.Module):
         return self.net(x)
 
 
-# ----------------- Offloading Modes -----------------
+class CriticNet(nn.Module):
+    """
+    Simple value network: maps observation to scalar V(s).
+    Used only on the host (not serialized to CRIO).
+    """
+    def __init__(self, obs_dim, hidden):
+        super().__init__()
+        layers = []
+        in_dim = obs_dim
+        for h in hidden:
+            layers += [nn.Linear(in_dim, h), nn.ReLU()]
+            in_dim = h
+        layers += [nn.Linear(in_dim, 1)]
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)  # (B,1)
+
+
+# ----------------- Offloading Modes (PPO-style) -----------------
 def run_offloading(mode_train: bool):
     """
     Execute the offloading pipeline where the CRIO executes the policy
     (online) and sends complete trajectories to the host for offline
-    weight updates.
+    PPO-style updates with clipping.
 
     Parameters
     ----------
     mode_train : bool
-        If True, perform training on received trajectories.
+        If True, perform PPO training on received trajectories.
         If False, only receive trajectories and resend weights (no updates).
     """
     tag = "OFFLOAD_TRAIN" if mode_train else "OFFLOAD_INFER"
     print(f"[{tag}] enabled (CRIO executes the policy).")
 
-    obs_dim   = int(PARAMS.get("obs_dim", N_OBS_ARRAY))
-    n_actions = int(PARAMS.get("n_actions", N_ACTUATOR_ARRAY))
-    hidden    = PARAMS.get("actor_layers", [8, 8])
+    # ---- Dimensions and hyperparameters ----
+    obs_dim_full = int(PARAMS.get("obs_dim", N_OBS_ARRAY))  # history-augmented dimension
+    n_actions    = int(PARAMS.get("n_actions", N_ACTUATOR_ARRAY))
+    hidden_actor  = PARAMS.get("actor_layers", [8, 8])
+    hidden_critic = PARAMS.get("critic_layers", [32, 32])
 
-    actor = ExternalActor(obs_dim, hidden, n_actions)
-    optimizer = optim.Adam(actor.parameters(), lr=float(PARAMS.get("ppo_learning_rate", 1e-3)))
+    gamma      = float(PARAMS.get("ppo_gamma", 0.99))
+    lam        = float(PARAMS.get("ppo_lambda", 0.95))
+    clip_range = float(PARAMS.get("ppo_clip_range", 0.2))
+    vf_coef    = float(PARAMS.get("ppo_vf_coef", 0.5))
+    ent_coef   = float(PARAMS.get("ppo_ent_coef", 0.0))
+    lr         = float(PARAMS.get("ppo_learning_rate", 1e-3))
+    epochs_per_ep = int(PARAMS.get("epochs_per_episode", 5))
 
-    ckpt_path = os.path.join(LOG_DIR, "external_actor.pt")
-    if os.path.exists(ckpt_path):
-        actor.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
-        print(f"[{tag}] Loaded actor from {ckpt_path}")
+    # ---- Networks: actor for CRIO + critic & log_std for PPO ----
+    actor = ExternalActor(obs_dim_full, hidden_actor, n_actions)
+    critic = CriticNet(obs_dim_full, hidden_critic)
+    # Diagonal Gaussian policy std (host-side only)
+    log_std = nn.Parameter(torch.zeros(n_actions, dtype=torch.float32))
 
+    # One optimizer over all trainable params
+    optimizer = optim.Adam(
+        list(actor.parameters()) + list(critic.parameters()) + [log_std],
+        lr=lr
+    )
+
+    # Optional: load previous actor weights if they exist
+    ckpt_actor_path = os.path.join(LOG_DIR, "external_actor.pt")
+    if os.path.exists(ckpt_actor_path):
+        actor.load_state_dict(torch.load(ckpt_actor_path, map_location="cpu"))
+        print(f"[{tag}] Loaded actor from {ckpt_actor_path}")
+
+    # ---- Serialization and initial weights push ----
     target_address = (send_ip, PARAMS["udp_port_send"])
-    arch_header = f"{obs_dim}_" + "_".join(map(str, hidden)) + f"_{n_actions}"
+    arch_header = f"{obs_dim_full}_" + "_".join(map(str, hidden_actor)) + f"_{n_actions}"
 
     msg = serialize_weights_like_keras_torch(actor, arch_header, IDENTIFIER_STR)
-    print("POOOOL --> ", msg)
     sock_send.sendto(msg.encode("utf-8"), target_address)
     print(f"[{tag}] Sent initial model weights to CRIO.")
 
@@ -473,45 +623,98 @@ def run_offloading(mode_train: bool):
 
     for ep in range(total_eps):
         print(f"[{tag}] Awaiting trajectory for episode {ep+1} ...")
-        X, Y, R = recv_trajectory(sock_recv, max_len, obs_dim, n_actions)
-        steps = len(X)
+        X_np, Y_np, R_np = recv_trajectory(sock_recv, max_len, obs_dim_full, n_actions)
+        steps = len(X_np)
+
         if steps == 0:
-            print(f"[{tag}] No trajectory received (timeout). Resending last weights and continuing.")
+            print(f"[{tag}] Empty trajectory received. Resending last weights and continuing.")
             sock_send.sendto(msg.encode("utf-8"), target_address)
             continue
 
-        ret = float(R.sum())
-        last_loss = np.nan
+        # Convert to torch tensors
+        X_t = torch.from_numpy(X_np.astype(np.float32))        # (T, obs_dim)
+        Y_t = torch.from_numpy(Y_np.astype(np.float32))        # (T, n_actions)
+        R_t = torch.from_numpy(R_np.astype(np.float32))        # (T, 1)
+
+        # Dones: single terminal at last step
+        dones_t = torch.zeros((steps, 1), dtype=torch.float32)
+        dones_t[-1, 0] = 1.0
+
+        # ----- PPO: compute old values and log_probs (fixed during the K epochs) -----
+        with torch.no_grad():
+            values_old = critic(X_t)                           # (T,1)
+            std = log_std.exp().unsqueeze(0).expand_as(Y_t)   # (T,n_actions)
+            mu_old = actor(X_t)
+            dist_old = torch.distributions.Normal(mu_old, std)
+            log_probs_old = dist_old.log_prob(Y_t).sum(dim=-1, keepdim=True)  # (T,1)
+
+        # Compute GAE advantages and returns
+        adv_t, ret_t = compute_gae(R_t, values_old, dones_t, gamma, lam)
+        # Normalize advantages (standard PPO trick)
+        adv_mean = adv_t.mean()
+        adv_std = adv_t.std() + 1e-8
+        adv_norm = (adv_t - adv_mean) / adv_std
+
+        last_loss_val = np.nan
 
         if mode_train:
-            # Simple weighted MSE loss with advantage-like weights from R
-            adv = R.squeeze()
-            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
-
-            X_t = torch.from_numpy(X)
-            Y_t = torch.from_numpy(Y)
-            W_t = torch.from_numpy(adv.astype(np.float32)).view(-1, 1)
-
             actor.train()
-            for _ in range(int(PARAMS.get("epochs_per_episode", 5))):
+            critic.train()
+
+            for _ in range(epochs_per_ep):
+                # New values and log_probs with updated params
+                values = critic(X_t)                       # (T,1)
+                std = log_std.exp().unsqueeze(0).expand_as(Y_t)
+                mu = actor(X_t)
+                dist = torch.distributions.Normal(mu, std)
+
+                log_probs = dist.log_prob(Y_t).sum(dim=-1, keepdim=True)  # (T,1)
+                entropy = dist.entropy().sum(dim=-1, keepdim=True)        # (T,1)
+
+                # PPO ratio
+                ratio = torch.exp(log_probs - log_probs_old)              # (T,1)
+
+                # Clipped surrogate objective
+                surr1 = ratio * adv_norm
+                surr2 = torch.clamp(ratio, 1.0 - clip_range, 1.0 + clip_range) * adv_norm
+                actor_loss = -torch.mean(torch.min(surr1, surr2))
+
+                # Value loss
+                value_loss = torch.mean((values - ret_t) ** 2)
+
+                # Entropy bonus (note: PPO total loss = actor + vf_coef * value - ent_coef * entropy)
+                entropy_loss = -entropy.mean()
+
+                loss = actor_loss + vf_coef * value_loss - ent_coef * entropy_loss
+
                 optimizer.zero_grad()
-                pred = actor(X_t)
-                loss = torch.mean(((pred - Y_t) ** 2) * (W_t.abs() + 1e-3))
                 loss.backward()
                 optimizer.step()
-                last_loss = float(loss.item())
 
-            torch.save(actor.state_dict(), ckpt_path)
+                last_loss_val = float(loss.item())
+
+            # Save actor only (this is what CRIO uses)
+            torch.save(actor.state_dict(), ckpt_actor_path)
             msg = serialize_weights_like_keras_torch(actor, arch_header, IDENTIFIER_STR)
 
+        # Compute scalar return for logging
+        ret_scalar = float(R_t.sum().item())
+
+        # Send updated (or same) actor weights back to CRIO
         sock_send.sendto(msg.encode("utf-8"), target_address)
 
+        # Log offload training
         with open(os.path.join(LOG_DIR, "external_training.csv"), "a") as f:
-            f.write(f"{ep+1},{steps},{ret:.6f},{(last_loss if mode_train else np.nan):.6f}\n")
+            f.write(
+                f"{ep+1},{steps},{ret_scalar:.6f},"
+                f"{(last_loss_val if mode_train else np.nan):.6f}\n"
+            )
 
-        print(f"[{tag}] Episode {ep+1}: steps={steps}, return={ret:.4f}"
-              + (f", loss={last_loss:.6f}" if mode_train else "")
-              + " | weights sent.")
+        print(
+            f"[{tag}] Episode {ep+1}: steps={steps}, return={ret_scalar:.4f}"
+            + (f", loss={last_loss_val:.6f}" if mode_train else "")
+            + " | weights sent."
+        )
 
     sock_send.close()
     sock_recv.close()
@@ -714,7 +917,7 @@ class CRIOUDPEnv(gym.Env):
         NOTE: Uses obs[-2] and a global scalar; may require SCALAR_REW definition.
         """
         aux = obs_pre_reward[-2]
-        return 1 - aux / SCALAR_REW  # SCALAR_REW must exist if CTA_1 is used
+        return 1 - aux / SCALAR_REW
 
     def _compute_reward_peak_fft_v2(self, obs_pre_reward, Re, alpha, beta):
         """
