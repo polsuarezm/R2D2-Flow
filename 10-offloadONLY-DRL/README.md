@@ -199,7 +199,7 @@ runs/<run_name>/
 
 Start TensorBoard:
 ```bash
-tensorboard --logdir runs
+tensorboard serve --logdir runs
 ```
 
 ### CSV step logs:
@@ -276,4 +276,5 @@ python SHARP_rpo_continuous_action_v3.py \
 ---
 
 If you need a **deploy-only script** (no training, just load model + send it to cRIO), tell me and I can generate it.  
+
 
