@@ -1,0 +1,16 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": "--env-id Ant-v4 --rpo-alpha 0.01" //para PPO ciscreto: "--env-id CartPole-v1 --track --capture_video"//para RPO: "--env-id Ant-v4 --rpo-alpha 0.01" // --track --capture_video"
+        }
+    ]
+}
