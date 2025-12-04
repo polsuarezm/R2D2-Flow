@@ -31,18 +31,18 @@ OBSERVATION_LENGTH = 4      # Dimension of observation from RT target
 ACTION_LENGTH = 1           # Dimension of action sent to RT target
 BATCH_SIZE = 50 + 1         # Must be >= (num_steps + 1); extra step for system delay
 
-LAYER1_DIM_ACTOR = 8
-LAYER2_DIM_ACTOR = 8
+LAYER1_DIM_ACTOR = 1
+LAYER2_DIM_ACTOR = 1
 LAYER1_DIM_CRITIC = 16
 LAYER2_DIM_CRITIC = 8
 
-LEARNING_RATE = 0.003
+LEARNING_RATE = 0.01
 GAE_LAMBDA = 0.95
 RPO_ALPHA = 0.0  # RPO_ALPHA = 0.0 => RPO reduces to PPO (typical RPO_ALPHA ~ 0.5)
 NUM_MINIBATCHES = 1
-GAMMA = 0.7
+GAMMA = 0.85
 N_STEPS = 50
-N_EPOCH = 5
+N_EPOCH = 10
 
 
 # ==========================
